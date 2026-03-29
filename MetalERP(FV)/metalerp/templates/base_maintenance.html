@@ -1,0 +1,136 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Stremet — Maintenance Technician{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            corePlugins: { preflight: false },
+            theme: { extend: {
+                fontFamily: { sans: ['DM Sans', 'system-ui', 'sans-serif'] },
+            }}
+        }
+    </script>
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="operator-body">
+    <!-- Top Bar -->
+    <header class="operator-topbar">
+        <div class="operator-topbar-left">
+            <a href="{% url 'dashboard:maintenance_home' %}" class="operator-logo-link">
+                <img src="{% static 'images/Logo.png' %}" alt="Stremet" class="operator-logo-img">
+            </a>
+            <div class="operator-topbar-divider"></div>
+            <span class="operator-role-label">Maintenance Technician</span>
+        </div>
+
+        <div class="operator-topbar-center">
+            <div class="mode-toggle" id="modeToggle">
+                <button class="mode-toggle-btn mode-toggle-agent active" data-mode="agent">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"/></svg>
+                    AI Agent
+                </button>
+                <button class="mode-toggle-btn mode-toggle-ui" data-mode="ui">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                    UI Mode
+                </button>
+            </div>
+        </div>
+
+        <div class="operator-topbar-right">
+            <a href="{% url 'dashboard:settings' %}" class="operator-topbar-icon" title="Settings">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+            </a>
+            <a href="{% url 'dashboard:clear_profile' %}" class="operator-switch-role" title="Switch Role">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M8 21H3v-5"/><path d="M21 3l-9 9"/><path d="M3 21l9-9"/></svg>
+                Switch Role
+            </a>
+        </div>
+    </header>
+
+    <!-- Main Layout -->
+    <div class="operator-layout {% if mode == 'ui' %}mode-ui{% else %}mode-agent{% endif %}" id="operatorLayout">
+        <!-- UI Panel (visible in UI mode) -->
+        <div class="ui-panel" id="uiPanel">
+            <!-- Sub Navigation -->
+            <nav class="ui-sub-nav">
+                <a href="{% url 'dashboard:maintenance_dashboard' %}" class="ui-sub-nav-item {% if active_sub == 'dashboard' %}active{% endif %}">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                    Dashboard
+                </a>
+                <a href="{% url 'dashboard:maintenance_machines' %}" class="ui-sub-nav-item {% if active_sub == 'machines' %}active{% endif %}">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2"/><path d="M12 21v2"/><path d="M4.22 4.22l1.42 1.42"/><path d="M18.36 18.36l1.42 1.42"/><path d="M1 12h2"/><path d="M21 12h2"/><path d="M4.22 19.78l1.42-1.42"/><path d="M18.36 5.64l1.42-1.42"/></svg>
+                    Machines
+                </a>
+                <a href="{% url 'dashboard:maintenance_log' %}" class="ui-sub-nav-item {% if active_sub == 'maintenance_log' %}active{% endif %}">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                    Maintenance Log
+                </a>
+                <a href="{% url 'dashboard:maintenance_logs' %}" class="ui-sub-nav-item {% if active_sub == 'logs' %}active{% endif %}">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
+                    Event Logs
+                </a>
+            </nav>
+            <!-- UI Content Area -->
+            <div class="ui-content" id="uiContent">
+                {% block ui_content %}{% endblock %}
+            </div>
+        </div>
+
+        <!-- Chat Panel (always visible) -->
+        <div class="chat-panel" id="chatPanel">
+            <div class="ai-chat-header">
+                <div class="ai-chat-header-left">
+                    <span class="ai-chat-title">Stremet AI</span>
+                    <select id="aiModelSelect" class="ai-model-select" title="Select model">
+                        <option value="gemini-2.5-flash" selected>Gemini 2.5 Flash</option>
+                        <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+                        <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                    </select>
+                </div>
+                <div class="ai-chat-header-actions">
+                    <button id="aiChatClear" class="ai-chat-header-btn" title="New conversation">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="ai-chat-messages" id="aiChatMessages">
+                <div class="ai-chat-welcome" id="aiChatWelcome">
+                    <div class="ai-chat-welcome-icon">
+                        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"/><path d="M18 14l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3z" opacity="0.6"/></svg>
+                    </div>
+                    <h3 class="ai-chat-welcome-title">How can I help?</h3>
+                    <p class="ai-chat-welcome-desc">Your maintenance and machine health assistant. Ask about machines, defects, maintenance schedules, or anything else.</p>
+                    <div class="ai-chat-suggestions">
+                        <button class="ai-chat-suggestion" data-msg="Give me a full machine fleet status overview.">Fleet Status</button>
+                        <button class="ai-chat-suggestion" data-msg="What machines are overdue for maintenance?">Maintenance Schedule</button>
+                        <button class="ai-chat-suggestion" data-msg="Correlate recent defects with machine health levels.">Defect Analysis</button>
+                        <button class="ai-chat-suggestion" data-msg="Generate a maintenance shift handoff report for the last 8 hours.">Shift Report</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ai-chat-input-area">
+                <div class="ai-chat-input-wrapper">
+                    <textarea id="aiChatInput" placeholder="Ask your maintenance assistant..." rows="1"></textarea>
+                    <button id="aiChatSend" class="ai-chat-send-btn" title="Send message">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{% static 'js/ai-chat.js' %}"></script>
+    <script src="{% static 'js/operator-layout.js' %}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

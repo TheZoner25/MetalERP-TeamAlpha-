@@ -1,0 +1,92 @@
+{% extends "base_maintenance.html" %}
+{% load static %}
+
+{% block title %}Stremet — Maintenance Dashboard{% endblock %}
+
+{% block ui_content %}
+<div class="op-dashboard">
+    <div class="op-dashboard-header">
+        <h1 class="op-greeting">
+            <script>
+                (function(){
+                    var h = new Date().getHours();
+                    var g = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+                    document.currentScript.parentElement.textContent = g;
+                })();
+            </script>
+        </h1>
+        <p class="op-date">{{ today|default:"" }}</p>
+    </div>
+
+    <div class="op-metrics-grid">
+        <div class="op-metric">
+            <div class="op-metric-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </div>
+            <div class="op-metric-value">{{ stats.needs_attention }}</div>
+            <div class="op-metric-label">Machines Need Attention</div>
+        </div>
+
+        <div class="op-metric">
+            <div class="op-metric-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            </div>
+            <div class="op-metric-value">{{ stats.avg_health }}%</div>
+            <div class="op-metric-label">Avg Fleet Health</div>
+        </div>
+
+        <div class="op-metric">
+            <div class="op-metric-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+            </div>
+            <div class="op-metric-value">{{ stats.defected_today }}</div>
+            <div class="op-metric-label">Defected Orders Today</div>
+        </div>
+
+        <div class="op-metric">
+            <div class="op-metric-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+            </div>
+            <div class="op-metric-value">{{ stats.scrap_today }}</div>
+            <div class="op-metric-label">Scrap Events Today</div>
+        </div>
+    </div>
+
+    {% if recent_maintenance %}
+    <div class="op-recent-activity">
+        <h2 class="op-section-title">Recent Maintenance</h2>
+        <div class="op-activity-list">
+            {% for entry in recent_maintenance %}
+            <div class="op-activity-item">
+                <div class="op-activity-dot"></div>
+                <div class="op-activity-content">
+                    <span class="op-activity-title">
+                        <span class="mt-badge mt-badge-{{ entry.maintenance_type }}">{{ entry.maintenance_type }}</span>
+                        {{ entry.machine.machine_name }} &mdash; {{ entry.description|truncatewords:12 }}
+                    </span>
+                    <span class="op-activity-time">{{ entry.date }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if recent_logs %}
+    <div class="op-recent-activity" style="margin-top: 32px;">
+        <h2 class="op-section-title">Recent Machine Events</h2>
+        <div class="op-activity-list">
+            {% for log in recent_logs %}
+            <div class="op-activity-item">
+                <div class="op-activity-dot" style="background: {% if log.severity == 'critical' %}#d44{% elif log.severity == 'error' %}#e65{% elif log.severity == 'warning' %}#e90{% else %}#ccc{% endif %};"></div>
+                <div class="op-activity-content">
+                    <span class="op-activity-title">{{ log.title }}</span>
+                    <span class="op-activity-time">{{ log.timestamp|timesince }} ago</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

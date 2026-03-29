@@ -1,0 +1,1443 @@
+{% extends "base_operator.html" %}
+{% load static %}
+
+{% block title %}Stremet — Delivery Management{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.min.js"></script>
+<style>
+/* ── Color-coded status badges ── */
+.op-status-badge.op-status-pending {
+    background: #fff3e0;
+    color: #e65100;
+    border: 1px solid #ffcc80;
+}
+.op-status-badge.op-status-stored {
+    background: #e8f5e9;
+    color: #2e7d32;
+    border: 1px solid #a5d6a7;
+}
+.op-status-badge.op-status-deleted {
+    background: #ffebee;
+    color: #c62828;
+    border: 1px solid #ef9a9a;
+}
+/* Progress color coding */
+.op-progress-full {
+    color: #2e7d32;
+    font-weight: 600;
+}
+.op-progress-partial {
+    color: #e65100;
+    font-weight: 600;
+}
+.op-progress-none {
+    color: #c62828;
+    font-weight: 600;
+}
+/* Stat card styling — rounded pill with padding */
+.op-delivery-stat {
+    padding: 10px 16px;
+    border-radius: 10px;
+    background: #fff;
+    border: 1px solid rgba(0,0,0,0.06);
+}
+.op-delivery-stat.stat-pending { background: #fff8f0; border-color: #ffcc80; }
+.op-delivery-stat.stat-queued { background: #f0f5ff; border-color: #90caf9; }
+.op-delivery-stat.stat-stored { background: #f0faf0; border-color: #a5d6a7; }
+.op-delivery-stat.stat-pending .op-delivery-stat-value { color: #e65100; }
+.op-delivery-stat.stat-queued .op-delivery-stat-value { color: #1565c0; }
+.op-delivery-stat.stat-stored .op-delivery-stat-value { color: #2e7d32; }
+.op-delivery-stat.stat-slots .op-delivery-stat-value { color: #333; }
+
+/* ── Filter Bar ── */
+.op-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    margin: 0 0 12px 0;
+    background: #fafafa;
+    border: 1px solid rgba(0,0,0,0.06);
+    border-radius: 10px;
+}
+.op-filter-bar .op-filter-search {
+    display: flex; align-items: center; gap: 6px;
+    flex: 1;
+}
+.op-filter-bar .op-filter-input {
+    border: 1px solid rgba(0,0,0,0.1);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 0.8rem;
+    font-family: 'DM Sans', sans-serif;
+    background: #fff;
+    width: 180px;
+}
+.op-filter-bar .op-filter-btn {
+    padding: 6px 14px;
+    border: 1px solid rgba(0,0,0,0.1);
+    border-radius: 6px;
+    background: #fff;
+    font-size: 0.78rem;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    display: flex; align-items: center; gap: 5px;
+    color: #555;
+    transition: all 0.15s;
+}
+.op-filter-bar .op-filter-btn:hover { background: #f0f0f0; color: #000; }
+.op-filter-bar .op-filter-btn.active { background: #000; color: #fff; border-color: #000; }
+
+/* ── Warehouse Map Overlay ── */
+.op-map-overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(255,255,255,0.96);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    z-index: 45;
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+}
+.op-map-overlay.active { display: flex; }
+.op-map-top {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 20px;
+    border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+.op-map-top h3 { font-size: 1rem; font-weight: 700; margin: 0; }
+.op-map-legend {
+    display: flex; gap: 14px; align-items: center;
+}
+.op-map-legend-item {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 0.72rem; color: #666;
+}
+.op-map-legend-dot {
+    width: 10px; height: 10px; border-radius: 3px;
+}
+.op-map-legend-dot.dot-full { background: #c62828; }
+.op-map-legend-dot.dot-partial { background: #e65100; }
+.op-map-legend-dot.dot-empty { background: #2e7d32; }
+.op-map-grid-wrap {
+    flex: 1; padding: 20px;
+    display: flex; flex-direction: column; align-items: center;
+    overflow: auto; min-height: 0;
+}
+.op-map-grid {
+    display: inline-grid;
+    gap: 3px;
+    background: #eee;
+    padding: 3px;
+    border-radius: 8px;
+}
+.op-map-cell {
+    width: 32px; height: 32px;
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.6rem; font-weight: 600; color: #fff;
+    cursor: default;
+    position: relative;
+}
+.op-map-cell.cell-storage { background: #5B8DEF; cursor: pointer; }
+.op-map-cell.cell-storage:hover { opacity: 0.85; }
+.op-map-cell.cell-wall { background: #444; }
+.op-map-cell.cell-walkway { background: #D4D4D4; }
+.op-map-cell.cell-dock { background: #E8943A; }
+.op-map-cell.cell-empty { background: #fff; border: 1px solid #ddd; }
+.op-map-cell.occ-full { background: #c62828; }
+.op-map-cell.occ-partial { background: #e65100; }
+.op-map-cell.occ-empty { background: #2e7d32; }
+.op-map-cell .map-route-badge {
+    position: absolute; top: -6px; right: -6px;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: #000; color: #fff; font-size: 0.55rem;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700;
+}
+.op-map-actions {
+    display: flex; gap: 10px; align-items: center;
+    padding: 0 20px 16px;
+}
+.op-map-route-info {
+    font-size: 0.8rem; color: #666; margin-left: 12px;
+}
+
+/* ── 3D Shelf Overlay Panel ── */
+.op-shelf-overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(255,255,255,0.94);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    z-index: 50;
+    display: none;
+    flex-direction: column;
+}
+.op-shelf-overlay.active { display: flex; }
+.op-shelf-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+.op-shelf-top .shelf-modal-tags { display: flex; gap: 6px; }
+.op-shelf-top .shelf-tag {
+    padding: 4px 12px;
+    background: rgba(0,0,0,0.06);
+    border-radius: 5px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #333;
+}
+.op-shelf-close-btn {
+    width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid rgba(0,0,0,0.1);
+    border-radius: 6px;
+    background: #fff;
+    cursor: pointer;
+    color: #666;
+    transition: all 0.15s;
+}
+.op-shelf-close-btn:hover { background: #f0f0f0; color: #000; }
+.op-shelf-viewer-body {
+    flex: 1; display: flex; min-height: 0;
+}
+.op-shelf-viewer-body .view-pane { position: relative; }
+.op-shelf-viewer-body .view-pane.view-topdown {
+    flex: 0 0 30%;
+    border-right: 1px solid rgba(0,0,0,0.06);
+    display: flex; flex-direction: column;
+}
+.op-shelf-viewer-body .view-pane.view-3d { flex: 1; position: relative; }
+.op-shelf-viewer-body .view-label {
+    font-size: 0.7rem; font-weight: 600; color: #999;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 8px 14px 4px;
+}
+.op-shelf-viewer-body .view-topdown canvas {
+    width: 100% !important; height: calc(100% - 28px) !important; display: block;
+}
+.op-shelf-viewer-body .three-container {
+    width: 100%; height: 100%; min-height: 300px;
+}
+.op-shelf-viewer-body .three-container canvas {
+    width: 100% !important; height: 100% !important; display: block;
+}
+.op-shelf-viewer-body .capacity-overlay {
+    position: absolute; top: 12px; right: 14px;
+    width: 70px; height: 70px; pointer-events: none;
+}
+.op-shelf-viewer-body .capacity-ring-svg { width: 70px; height: 70px; }
+.op-shelf-viewer-body .capacity-text {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%); text-align: center; line-height: 1;
+}
+.op-shelf-viewer-body .capacity-percent {
+    font-size: 0.85rem; font-weight: 700; color: #333; display: block;
+}
+.op-shelf-viewer-body .capacity-label {
+    font-size: 0.55rem; color: #999; text-transform: uppercase; display: block; margin-top: 2px;
+}
+.op-shelf-viewer-body .shelf-3d-label {
+    position: absolute; bottom: 12px; left: 14px;
+    font-size: 0.75rem; color: #666; font-weight: 500;
+}
+.op-shelf-bottom {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 20px;
+    border-top: 1px solid rgba(0,0,0,0.06);
+    background: rgba(255,255,255,0.8);
+}
+.op-shelf-bottom .shelf-capacity-text { font-size: 0.85rem; color: #666; font-weight: 500; }
+.op-shelf-bottom .btn-mark-stored {
+    padding: 10px 24px; background: #000; color: #fff; border: none;
+    border-radius: 8px; font-size: 0.85rem; font-weight: 600;
+    cursor: pointer; font-family: 'DM Sans', sans-serif; transition: opacity 0.15s;
+}
+.op-shelf-bottom .btn-mark-stored:hover { opacity: 0.85; }
+.op-shelf-bottom .btn-mark-stored:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Active row highlight */
+.op-table tr.op-row-active { background: rgba(0,0,0,0.04); }
+
+/* ── Dock Card (adapted for operator layout) ── */
+.op-dock-card {
+    margin: 0 0 20px 0;
+    border: 1px solid rgba(0,0,0,0.08);
+    border-radius: 12px;
+    background: #fff;
+    overflow: hidden;
+}
+.op-dock-card .dock-card-inner {
+    display: flex;
+    min-height: 200px;
+}
+.op-dock-card .dock-queue-panel {
+    width: 160px;
+    border-right: 1px solid rgba(0,0,0,0.06);
+    display: flex;
+    flex-direction: column;
+    background: #fafafa;
+}
+.op-dock-card .dock-queue-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+.op-dock-card .dock-queue-title {
+    font-size: 0.8rem; font-weight: 700; color: #333;
+}
+.op-dock-card .dock-queue-badge {
+    font-size: 0.7rem; font-weight: 700; background: #000;
+    color: #fff; width: 22px; height: 22px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+}
+.op-dock-card .dock-queue-list {
+    flex: 1; overflow-y: auto; padding: 8px;
+}
+.op-dock-card .dock-queue-empty {
+    font-size: 0.75rem; color: #999; text-align: center; padding: 20px 8px;
+}
+.op-dock-card .dock-queue-item {
+    padding: 8px 10px; margin-bottom: 6px; border-radius: 6px;
+    border: 1px solid rgba(0,0,0,0.06); cursor: pointer;
+    transition: background 0.15s; background: #fff;
+}
+.op-dock-card .dock-queue-item:hover { background: #f0f0f0; }
+.op-dock-card .dock-queue-item-title { font-size: 0.75rem; font-weight: 600; color: #333; }
+.op-dock-card .dock-queue-item-info { font-size: 0.7rem; color: #888; margin-top: 2px; }
+.op-dock-card .dock-info-panel {
+    flex: 1; display: flex; flex-direction: column;
+}
+.op-dock-card .dock-tabs-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 14px; border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+.op-dock-card .dock-tabs { display: flex; gap: 0; }
+.op-dock-card .dock-tab {
+    padding: 10px 16px; font-size: 0.78rem; font-weight: 500;
+    color: #888; border: none; background: none; cursor: pointer;
+    border-bottom: 2px solid transparent; font-family: 'DM Sans', sans-serif;
+    display: flex; align-items: center; gap: 6px;
+    transition: color 0.15s, border-color 0.15s;
+}
+.op-dock-card .dock-tab:hover { color: #333; }
+.op-dock-card .dock-tab.active { color: #000; border-bottom-color: #000; font-weight: 600; }
+.op-dock-card .dock-tab-dot {
+    width: 6px; height: 6px; border-radius: 50%; background: #ddd;
+}
+.op-dock-card .dock-tab--occupied .dock-tab-dot { background: #e65100; }
+.op-dock-card .dock-tab--arriving .dock-tab-dot { background: #1565c0; animation: pulse-dot 0.5s ease infinite alternate; }
+@keyframes pulse-dot { from { opacity: 0.4; } to { opacity: 1; } }
+.op-dock-card .dock-minimize-btn {
+    width: 28px; height: 28px; border: 1px solid rgba(0,0,0,0.08);
+    border-radius: 5px; background: #fff; cursor: pointer; color: #888;
+    display: flex; align-items: center; justify-content: center;
+}
+.op-dock-card .dock-minimize-btn:hover { background: #f0f0f0; color: #000; }
+.op-dock-card .dock-step-content {
+    flex: 1; padding: 16px; overflow-y: auto;
+}
+.op-dock-card .dock-empty-state {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; height: 100%; color: #999; gap: 8px;
+    font-size: 0.85rem;
+}
+.op-dock-card .dock-empty-state kbd {
+    padding: 2px 8px; border: 1px solid rgba(0,0,0,0.15);
+    border-radius: 4px; font-size: 0.75rem; background: #f5f5f5;
+}
+.op-dock-card .dock-step { display: none; }
+.op-dock-card .dock-step-header h3 { font-size: 0.95rem; font-weight: 700; margin: 0 0 4px 0; }
+.op-dock-card .dock-step-header p { font-size: 0.8rem; color: #888; margin: 0 0 14px 0; }
+.op-dock-card .dock-3d-scan-container { width: 100%; height: 180px; border-radius: 8px; overflow: hidden; margin-bottom: 12px; }
+.op-dock-card .dock-scan-title { font-size: 0.9rem; font-weight: 600; margin: 0 0 4px 0; text-align: center; }
+.op-dock-card .dock-scan-subtitle { font-size: 0.78rem; color: #888; margin: 0; text-align: center; }
+.op-dock-card .dock-pallets { display: flex; flex-wrap: wrap; gap: 10px; }
+.op-dock-card .dock-pallet-card {
+    flex: 1 1 220px; padding: 12px; border: 1px solid rgba(0,0,0,0.06);
+    border-radius: 8px; background: #fafafa;
+}
+.op-dock-card .dock-pallet-header { font-size: 0.8rem; font-weight: 700; color: #333; margin-bottom: 8px; }
+.op-dock-card .dock-pallet-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.op-dock-card .dock-pallet-detail { display: flex; flex-direction: column; gap: 1px; }
+.op-dock-card .dock-pallet-label { font-size: 0.65rem; color: #999; text-transform: uppercase; letter-spacing: 0.03em; }
+.op-dock-card .dock-pallet-value { font-size: 0.8rem; color: #333; font-weight: 500; }
+.op-dock-card .dock-assign-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.op-dock-card .dock-shelf-input {
+    padding: 6px 10px; border: 1px solid rgba(0,0,0,0.12);
+    border-radius: 6px; font-size: 0.8rem; font-family: 'DM Sans', monospace;
+    width: 100px; text-align: center;
+}
+.op-dock-card .dock-summary-table { font-size: 0.8rem; }
+.op-dock-card .dock-nav {
+    display: none; align-items: center; justify-content: space-between;
+    padding: 10px 16px; border-top: 1px solid rgba(0,0,0,0.06);
+}
+.op-dock-card .dock-step-dots { display: flex; align-items: center; gap: 0; }
+.op-dock-card .dock-dot {
+    width: 24px; height: 24px; border-radius: 50%;
+    border: 2px solid #ddd; display: flex; align-items: center;
+    justify-content: center; font-size: 0.7rem; font-weight: 600; color: #bbb;
+}
+.op-dock-card .dock-dot.active { border-color: #000; color: #000; }
+.op-dock-card .dock-dot.current { background: #000; color: #fff; border-color: #000; }
+.op-dock-card .dock-dot-line { width: 20px; height: 2px; background: #ddd; }
+.op-dock-card .dock-nav-btns { display: flex; gap: 8px; }
+.op-dock-card .dock-nav-btns button {
+    padding: 7px 18px; border-radius: 6px; font-size: 0.8rem;
+    font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif;
+    border: 1px solid rgba(0,0,0,0.12); background: #fff; color: #333;
+    transition: all 0.15s;
+}
+.op-dock-card .dock-nav-btns button:hover { background: #f0f0f0; }
+.op-dock-card .btn-confirm-delivery {
+    background: #000 !important; color: #fff !important; border-color: #000 !important;
+}
+.op-dock-card .btn-confirm-delivery:hover { opacity: 0.85; }
+.op-dock-card .btn-confirm-delivery:disabled { opacity: 0.4; cursor: not-allowed; }
+</style>
+{% endblock %}
+
+{% block ui_content %}
+{% csrf_token %}
+<div class="op-page-content" style="position:relative; height:100%; overflow-y:auto;">
+    <div class="op-page-header">
+        <h1 class="op-page-title">Delivery Management</h1>
+        <div class="op-page-actions">
+            <div class="op-warehouse-select">
+                <select id="warehouseSelect" class="op-select">
+                    {% for wh in warehouses %}
+                    <option value="{{ wh.id }}" {% if current_warehouse and wh.id == current_warehouse.id %}selected{% endif %}>{{ wh.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button class="op-btn" id="mapBtn" onclick="openMapOverlay()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                Map
+            </button>
+            <button id="addDeliveryBtn" class="op-btn op-btn-primary" onclick="triggerNewShipment()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                New Delivery
+            </button>
+        </div>
+    </div>
+
+    <!-- Pipeline Stats -->
+    <div class="op-delivery-stats">
+        <div class="op-delivery-stat stat-pending">
+            <span class="op-delivery-stat-value">{{ pending_count }}</span>
+            <span class="op-delivery-stat-label">Unstocked</span>
+        </div>
+        <div class="op-delivery-stat-arrow">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+        </div>
+        <div class="op-delivery-stat stat-queued">
+            <span class="op-delivery-stat-value" id="queueCountStat">0</span>
+            <span class="op-delivery-stat-label">In Queue</span>
+        </div>
+        <div class="op-delivery-stat-arrow">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+        </div>
+        <div class="op-delivery-stat stat-stored">
+            <span class="op-delivery-stat-value">{{ stored_count }}</span>
+            <span class="op-delivery-stat-label">Stored</span>
+        </div>
+        <div class="op-delivery-stat-arrow">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+        </div>
+        <div class="op-delivery-stat stat-slots">
+            <span class="op-delivery-stat-value">{{ available_slots }}</span>
+            <span class="op-delivery-stat-label">Slots Available</span>
+        </div>
+    </div>
+
+    <!-- Dock Card (Queue + Docking System) -->
+    <div class="op-dock-card" id="dockCard">
+        <div class="dock-card-inner">
+            <!-- Queue Panel (left) -->
+            <div class="dock-queue-panel">
+                <div class="dock-queue-header">
+                    <span class="dock-queue-title">Queue</span>
+                    <span class="dock-queue-badge" id="queueBadge">0</span>
+                </div>
+                <div class="dock-queue-list" id="queueList">
+                    <div class="dock-queue-empty" id="queueEmpty">No shipments queued</div>
+                </div>
+            </div>
+
+            <!-- Info Panel (right) -->
+            <div class="dock-info-panel">
+                <div class="dock-tabs-bar">
+                    <div class="dock-tabs" id="dockTabs">
+                        {% for dock_num in dock_range %}
+                        <button class="dock-tab {% if dock_num == 1 %}active{% endif %}" data-dock="{{ dock_num }}" onclick="switchDock({{ dock_num }})">
+                            <span class="dock-tab-dot"></span>Dock {{ dock_num }}
+                        </button>
+                        {% endfor %}
+                    </div>
+                    <button class="dock-minimize-btn" onclick="toggleDockCard()" title="Minimize">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    </button>
+                </div>
+
+                <div class="dock-step-content" id="dockStepContent">
+                    <!-- Empty State -->
+                    <div class="dock-empty-state" id="dockEmptyState">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(0,0,0,0.15)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>
+                        <p>No shipment on this dock</p>
+                        <span>Click <strong>New Delivery</strong> to simulate an incoming shipment</span>
+                    </div>
+
+                    <!-- Step 0: 3D Dock Scanning -->
+                    <div class="dock-step" id="dockStep0">
+                        <div class="dock-3d-scan-container" id="dockScan3DContainer"></div>
+                        <h3 class="dock-scan-title" id="dockScanTitle">Scanning dock area...</h3>
+                        <p class="dock-scan-subtitle" id="dockScanSubtitle">Detecting incoming shipment</p>
+                    </div>
+
+                    <!-- Step 1: Detected Pallets -->
+                    <div class="dock-step" id="dockStep1">
+                        <div class="dock-step-header">
+                            <h3>Shipment Detected</h3>
+                            <p>The following pallets were detected on the dock.</p>
+                        </div>
+                        <div class="dock-pallets" id="dockPallets"></div>
+                    </div>
+
+                    <!-- Step 2: Assign Locations -->
+                    <div class="dock-step" id="dockStep2">
+                        <div class="dock-step-header">
+                            <h3>Assign Shelf Locations</h3>
+                            <p>Verify or edit shelf assignments for each pallet.</p>
+                        </div>
+                        <div class="dock-pallets" id="dockAssign"></div>
+                    </div>
+
+                    <!-- Step 3: Confirm -->
+                    <div class="dock-step" id="dockStep3">
+                        <div class="dock-step-header">
+                            <h3>Confirm Placement</h3>
+                            <p>Review and confirm all pallet assignments.</p>
+                        </div>
+                        <div class="dock-summary" id="dockSummary"></div>
+                    </div>
+                </div>
+
+                <!-- Step Indicator + Nav -->
+                <div class="dock-nav" id="dockNav" style="display:none;">
+                    <div class="dock-step-dots">
+                        <span class="dock-dot active" data-step="0">1</span>
+                        <span class="dock-dot-line"></span>
+                        <span class="dock-dot" data-step="1">2</span>
+                        <span class="dock-dot-line"></span>
+                        <span class="dock-dot" data-step="2">3</span>
+                        <span class="dock-dot-line"></span>
+                        <span class="dock-dot" data-step="3">4</span>
+                    </div>
+                    <div class="dock-nav-btns">
+                        <button id="dockBackBtn" onclick="dockBack()">Back</button>
+                        <button class="btn-confirm-delivery" id="dockNextBtn" onclick="dockNext()">Next</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter Bar -->
+    <div class="op-filter-bar">
+        <div class="op-filter-search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(0,0,0,0.3)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input type="text" id="deliverySearch" class="op-filter-input" placeholder="Search deliveries..." oninput="filterDeliveries()">
+        </div>
+        <button class="op-filter-btn" onclick="toggleSort('date')" id="sortDateBtn">
+            Date <span id="arrowDate">↕</span>
+        </button>
+        <button class="op-filter-btn" onclick="toggleSort('qty')" id="sortQtyBtn">
+            Qty <span id="arrowQty">↕</span>
+        </button>
+        <button class="op-filter-btn" onclick="openMapOverlay()">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+            Analyze Route
+        </button>
+    </div>
+
+    <!-- Delivery Table -->
+    <div class="op-table-container">
+        <table class="op-table" id="deliveryTable">
+            <thead>
+                <tr>
+                    <th>Manufacturer</th>
+                    <th>Material</th>
+                    <th>Date</th>
+                    <th>Batch ID</th>
+                    <th>Qty</th>
+                    <th>Shelf</th>
+                    <th>Status</th>
+                    <th>Progress</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in deliveries %}
+                <tr data-delivery-id="{{ d.id }}" data-shelf="{{ d.shelf_id }}">
+                    <td class="op-td-primary">{{ d.manufacturer }}</td>
+                    <td>{{ d.material_name }}</td>
+                    <td style="font-size:0.78rem;color:#666;">{{ d.created_at }}</td>
+                    <td class="op-td-mono">{{ d.batch_id }}</td>
+                    <td>{{ d.quantity }}</td>
+                    <td class="op-td-mono">{{ d.shelf_id }}</td>
+                    <td>
+                        <span class="op-status-badge op-status-{{ d.status }}">{{ d.status|upper }}</span>
+                    </td>
+                    <td>
+                        {% if d.status == 'pending' %}
+                            {% if d.pallets_stored == 0 %}
+                            <span class="op-td-mono op-progress-none">{{ d.pallets_stored }}/{{ d.pallets_needed }}</span>
+                            {% elif d.pallets_stored >= d.pallets_needed %}
+                            <span class="op-td-mono op-progress-full">{{ d.pallets_stored }}/{{ d.pallets_needed }}</span>
+                            {% else %}
+                            <span class="op-td-mono op-progress-partial">{{ d.pallets_stored }}/{{ d.pallets_needed }}</span>
+                            {% endif %}
+                        {% else %}
+                        <span class="op-td-mono op-progress-full">done</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if d.status == 'pending' %}
+                        <button class="op-btn-sm op-btn-store"
+                            data-delivery-id="{{ d.id }}"
+                            data-shelf-id="{{ d.shelf_id }}">
+                            Store
+                        </button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="9" class="op-td-empty">No deliveries found</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Warehouse Map Overlay -->
+    <div class="op-map-overlay" id="mapOverlay">
+        <div class="op-map-top">
+            <h3>Warehouse Map</h3>
+            <div style="display:flex;align-items:center;gap:14px;">
+                <div class="op-map-legend">
+                    <div class="op-map-legend-item"><span class="op-map-legend-dot dot-full"></span>Full</div>
+                    <div class="op-map-legend-item"><span class="op-map-legend-dot dot-partial"></span>Partial</div>
+                    <div class="op-map-legend-item"><span class="op-map-legend-dot dot-empty"></span>Empty</div>
+                </div>
+                <button class="op-shelf-close-btn" onclick="closeMapOverlay()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                </button>
+            </div>
+        </div>
+        <div class="op-map-grid-wrap">
+            <div class="op-map-grid" id="mapGrid">
+                <p style="color:#999;font-size:0.85rem;">Loading warehouse map...</p>
+            </div>
+        </div>
+        <div class="op-map-actions">
+            <label style="font-size:0.78rem;color:#666;">Start from:</label>
+            <select id="mapStartSector" style="padding:5px 10px;border:1px solid rgba(0,0,0,0.12);border-radius:6px;font-size:0.78rem;font-family:'DM Sans',sans-serif;">
+                <option value="">Auto</option>
+            </select>
+            <button class="op-btn op-btn-primary" onclick="calcOptimalRoute()" style="font-size:0.78rem;padding:7px 16px;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+                Analyze Route
+            </button>
+            <span class="op-map-route-info" id="mapRouteInfo"></span>
+        </div>
+    </div>
+
+    <!-- 3D Shelf Overlay (appears on top when Store is clicked) -->
+    <div class="op-shelf-overlay" id="shelfOverlay">
+        <div class="op-shelf-top">
+            <div class="shelf-modal-tags" id="shelfModalHeader"></div>
+            <button class="op-shelf-close-btn" id="shelfCloseBtn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="op-shelf-viewer-body">
+            <div class="view-pane view-topdown">
+                <div class="view-label">Top View</div>
+                <canvas id="topdownCanvas"></canvas>
+            </div>
+            <div class="view-pane view-3d">
+                <div class="view-label">3D View</div>
+                <div class="three-container" id="threeContainer"></div>
+                <div class="capacity-overlay">
+                    <svg class="capacity-ring-svg" viewBox="0 0 80 80">
+                        <circle cx="40" cy="40" r="36" fill="none" stroke="rgba(0,0,0,0.08)" stroke-width="4"/>
+                        <circle id="capacityRing" cx="40" cy="40" r="36" fill="none" stroke="rgba(0,0,0,0.6)" stroke-width="4"
+                                stroke-dasharray="226.2" stroke-dashoffset="226.2"
+                                stroke-linecap="round" transform="rotate(-90 40 40)"
+                                style="transition: stroke-dashoffset 0.6s ease"/>
+                    </svg>
+                    <div class="capacity-text">
+                        <span id="capacityPercent" class="capacity-percent">0%</span>
+                        <span class="capacity-label">Capacity</span>
+                    </div>
+                </div>
+                <div class="shelf-3d-label" id="shelfLabel3D"></div>
+            </div>
+        </div>
+        <div class="op-shelf-bottom">
+            <span id="shelfCapacity" class="shelf-capacity-text">0% Full</span>
+            <button id="markStoredBtn" class="btn-mark-stored" onclick="Shelf3D.markStored()">
+                Mark as Stored
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/shelf3d.js' %}"></script>
+<script>
+// =============================================
+// 3D Dock Scanning Scene
+// =============================================
+var DockScanScene = (function() {
+    var scene, camera, renderer, animId;
+    var pallet, scanBeam, scanGlow;
+    var startTime = 0;
+
+    function init(container) {
+        if (!container || !container.isConnected) return;
+        dispose();
+        var w = container.clientWidth || 300;
+        var h = container.clientHeight || 180;
+
+        scene = new THREE.Scene();
+        camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 50);
+        camera.position.set(3, 2.5, 3.5);
+        camera.lookAt(0, 0.4, 0);
+
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(w, h);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 0.9;
+        container.appendChild(renderer.domElement);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.45));
+        var dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
+        dirLight.position.set(3, 6, 4);
+        dirLight.castShadow = true;
+        scene.add(dirLight);
+        scene.add(new THREE.PointLight(0x4a9eff, 0.3, 10));
+
+        var ground = new THREE.Mesh(new THREE.PlaneGeometry(12, 12), new THREE.MeshStandardMaterial({ color: 0xf0f0f0, roughness: 0.95 }));
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        var plat = new THREE.Mesh(new THREE.BoxGeometry(5, 0.2, 3.5), new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.6, metalness: 0.4 }));
+        plat.position.set(0, 0.1, 0);
+        plat.castShadow = true;
+        scene.add(plat);
+
+        var stripMat = new THREE.MeshStandardMaterial({ color: 0xf5a623, roughness: 0.5 });
+        [-1.7, 1.7].forEach(function(z) {
+            var strip = new THREE.Mesh(new THREE.BoxGeometry(5, 0.02, 0.08), stripMat);
+            strip.position.set(0, 0.21, z);
+            scene.add(strip);
+        });
+
+        pallet = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.8, 1.0), new THREE.MeshStandardMaterial({ color: 0x8B7355, roughness: 0.7, metalness: 0.1 }));
+        pallet.position.set(5, 0.6, 0);
+        pallet.castShadow = true;
+        scene.add(pallet);
+
+        var sheet = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.06, 0.9), new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.3, metalness: 0.8 }));
+        sheet.position.set(0, 0.43, 0);
+        sheet.castShadow = true;
+        pallet.add(sheet);
+
+        scanBeam = new THREE.Mesh(new THREE.PlaneGeometry(0.04, 1.6), new THREE.MeshBasicMaterial({ color: 0x4a9eff, transparent: true, opacity: 0.9, side: THREE.DoubleSide }));
+        scanBeam.position.set(-2, 1.0, 0);
+        scanBeam.visible = false;
+        scene.add(scanBeam);
+
+        scanGlow = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 1.8), new THREE.MeshBasicMaterial({ color: 0x4a9eff, transparent: true, opacity: 0.12, side: THREE.DoubleSide }));
+        scanGlow.position.set(-2, 1.0, 0);
+        scanGlow.visible = false;
+        scene.add(scanGlow);
+
+        startTime = performance.now();
+        animate();
+    }
+
+    function animate() {
+        animId = requestAnimationFrame(animate);
+        if (!renderer || !scene || !camera) return;
+        var elapsed = (performance.now() - startTime) / 1000;
+        if (elapsed < 2.5) {
+            var t = Math.min(elapsed / 2.5, 1);
+            pallet.position.x = 5 - 5 * (1 - Math.pow(1 - t, 3));
+        } else {
+            pallet.position.x = 0;
+        }
+        if (elapsed > 2.2) {
+            scanBeam.visible = true;
+            scanGlow.visible = true;
+            var st = elapsed - 2.2;
+            var bx = Math.sin(st * 2.5) * 1.2;
+            scanBeam.position.x = bx;
+            scanGlow.position.x = bx;
+            scanBeam.material.opacity = 0.7 + Math.sin(st * 8) * 0.3;
+            scanGlow.material.opacity = 0.08 + Math.sin(st * 4) * 0.06;
+        }
+        var camAngle = 0.4 + elapsed * 0.08;
+        camera.position.set(4 * Math.cos(camAngle), 2.2 + Math.sin(elapsed * 0.3) * 0.2, 4 * Math.sin(camAngle));
+        camera.lookAt(0, 0.4, 0);
+        renderer.render(scene, camera);
+    }
+
+    function dispose() {
+        if (animId) cancelAnimationFrame(animId);
+        animId = null;
+        if (renderer) {
+            if (renderer.domElement && renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
+            renderer.dispose();
+        }
+        if (scene) scene.traverse(function(obj) {
+            if (obj.geometry) obj.geometry.dispose();
+            if (obj.material) { if (Array.isArray(obj.material)) obj.material.forEach(function(m){m.dispose();}); else obj.material.dispose(); }
+        });
+        scene = null; camera = null; renderer = null; pallet = null; scanBeam = null; scanGlow = null;
+    }
+
+    return { init: init, dispose: dispose };
+})();
+
+// =============================================
+// Dock Card — Shipment Queue System
+// =============================================
+var NUM_DOCKS = {{ current_warehouse.num_docks|default:"3" }};
+var docks = {};
+for (var _i = 1; _i <= NUM_DOCKS; _i++) docks[_i] = null;
+var shipmentQueue = [];
+var activeDock = 1;
+var shipmentIdCounter = 0;
+
+function getCsrfToken() {
+    var el = document.querySelector('[name=csrfmiddlewaretoken]');
+    return el ? el.value : '';
+}
+
+function toggleDockCard() {
+    var card = document.getElementById('dockCard');
+    if (card) card.style.display = card.style.display === 'none' ? '' : 'none';
+}
+
+function triggerNewShipment() {
+    shipmentIdCounter++;
+    var shipment = { id: shipmentIdCounter, step: 0, pallets: [], dockId: null, status: 'scanning' };
+    var assignedDock = null;
+    for (var d = 1; d <= NUM_DOCKS; d++) {
+        if (!docks[d]) { assignedDock = d; break; }
+    }
+    if (assignedDock) {
+        shipment.dockId = assignedDock;
+        docks[assignedDock] = shipment;
+        startScanning(shipment);
+        switchDock(assignedDock);
+        blinkDockTab(assignedDock);
+    } else {
+        shipmentQueue.push(shipment);
+        renderQueue();
+    }
+}
+
+function switchDock(dockId) {
+    activeDock = dockId;
+    document.querySelectorAll('.dock-tab').forEach(function(tab) {
+        tab.classList.toggle('active', parseInt(tab.dataset.dock, 10) === dockId);
+    });
+    renderDockContent();
+}
+
+function blinkDockTab(dockId) {
+    var tab = document.querySelector('.dock-tab[data-dock="' + dockId + '"]');
+    if (!tab) return;
+    tab.classList.add('dock-tab--arriving');
+    setTimeout(function() { tab.classList.remove('dock-tab--arriving'); }, 3000);
+}
+
+function updateDockTabStates() {
+    for (var d = 1; d <= NUM_DOCKS; d++) {
+        var tab = document.querySelector('.dock-tab[data-dock="' + d + '"]');
+        if (tab) tab.classList.toggle('dock-tab--occupied', !!docks[d]);
+    }
+}
+
+function renderDockContent() {
+    var shipment = docks[activeDock];
+    var emptyState = document.getElementById('dockEmptyState');
+    var nav = document.getElementById('dockNav');
+    for (var i = 0; i < 4; i++) {
+        var stepEl = document.getElementById('dockStep' + i);
+        if (stepEl) stepEl.style.display = 'none';
+    }
+    emptyState.style.display = 'none';
+    if (!shipment) {
+        emptyState.style.display = 'flex';
+        nav.style.display = 'none';
+        return;
+    }
+    var step = shipment.step;
+    var activeStep = document.getElementById('dockStep' + step);
+    if (activeStep) activeStep.style.display = 'block';
+    if (step === 0) {
+        nav.style.display = 'none';
+    } else {
+        nav.style.display = 'flex';
+        document.getElementById('dockBackBtn').style.display = step <= 1 ? 'none' : 'inline-flex';
+        var nextBtn = document.getElementById('dockNextBtn');
+        nextBtn.textContent = step === 3 ? 'Place Shipment' : 'Next';
+        nextBtn.disabled = false;
+    }
+    document.querySelectorAll('.dock-dot').forEach(function(dot) {
+        var s = parseInt(dot.dataset.step, 10);
+        dot.classList.toggle('active', s <= step);
+        dot.classList.toggle('current', s === step);
+    });
+    if (step === 1) renderStep1(shipment);
+    if (step === 2) renderStep2(shipment);
+    if (step === 3) renderStep3(shipment);
+}
+
+function startScanning(shipment) {
+    var titleEl = document.getElementById('dockScanTitle');
+    var subEl = document.getElementById('dockScanSubtitle');
+    if (titleEl) titleEl.textContent = 'Scanning dock area...';
+    if (subEl) subEl.textContent = 'Detecting incoming shipment';
+    if (activeDock === shipment.dockId) {
+        var step0 = document.getElementById('dockStep0');
+        if (step0) step0.style.display = 'block';
+        setTimeout(function() {
+            var container = document.getElementById('dockScan3DContainer');
+            if (container && container.isConnected && container.clientWidth > 0) DockScanScene.init(container);
+        }, 150);
+    }
+    var count = 2 + Math.floor(Math.random() * 3);
+    var promises = [];
+    for (var i = 0; i < count; i++) promises.push(fetch('/api/generate-delivery/').then(function(r){ return r.json(); }));
+    setTimeout(function() {
+        if (titleEl) titleEl.textContent = 'Shipment Detected!';
+        if (subEl) subEl.textContent = 'Preparing pallet details...';
+    }, 2500);
+    Promise.all(promises).then(function(results) {
+        shipment.pallets = results;
+        setTimeout(function() {
+            DockScanScene.dispose();
+            shipment.step = 1;
+            shipment.status = 'detected';
+            if (activeDock === shipment.dockId) renderDockContent();
+            updateDockTabStates();
+        }, 5000);
+    });
+}
+
+function renderStep1(shipment) {
+    var container = document.getElementById('dockPallets');
+    container.innerHTML = '';
+    shipment.pallets.forEach(function(p, i) {
+        container.innerHTML +=
+            '<div class="dock-pallet-card"><div class="dock-pallet-header">Pallet ' + (i+1) + '</div>' +
+            '<div class="dock-pallet-grid">' +
+            '<div class="dock-pallet-detail"><span class="dock-pallet-label">Manufacturer</span><span class="dock-pallet-value">' + p.manufacturer + '</span></div>' +
+            '<div class="dock-pallet-detail"><span class="dock-pallet-label">Size</span><span class="dock-pallet-value">' + p.size + '</span></div>' +
+            '<div class="dock-pallet-detail"><span class="dock-pallet-label">Batch</span><span class="dock-pallet-value">' + p.batch_id + '</span></div>' +
+            '<div class="dock-pallet-detail"><span class="dock-pallet-label">Quantity</span><span class="dock-pallet-value">' + p.quantity + '</span></div>' +
+            '<div class="dock-pallet-detail"><span class="dock-pallet-label">Material</span><span class="dock-pallet-value">' + (p.material_name || '\u2014') + '</span></div>' +
+            '</div></div>';
+    });
+}
+
+function renderStep2(shipment) {
+    var container = document.getElementById('dockAssign');
+    container.innerHTML = '';
+    shipment.pallets.forEach(function(p, i) {
+        container.innerHTML +=
+            '<div class="dock-pallet-card"><div class="dock-pallet-header">Pallet ' + (i+1) + ' \u2014 ' + p.manufacturer + '</div>' +
+            '<div class="dock-assign-row"><span class="dock-pallet-label">' + p.size + ' \u00B7 ' + p.quantity + '</span>' +
+            '<input type="text" class="dock-shelf-input" id="dockShelf_' + shipment.dockId + '_' + i + '" value="' + p.shelf_id + '" placeholder="e.g. 3-B-2">' +
+            '</div></div>';
+    });
+}
+
+function renderStep3(shipment) {
+    shipment.pallets.forEach(function(p, i) {
+        var input = document.getElementById('dockShelf_' + shipment.dockId + '_' + i);
+        if (input) p.shelf_id = input.value;
+    });
+    var html = '<table class="op-table dock-summary-table"><thead><tr><th>#</th><th>Manufacturer</th><th>Size</th><th>Qty</th><th>Shelf</th></tr></thead><tbody>';
+    shipment.pallets.forEach(function(p, i) {
+        html += '<tr><td>' + (i+1) + '</td><td>' + p.manufacturer + '</td><td class="op-td-mono">' + p.size + '</td><td>' + p.quantity + '</td><td class="op-td-mono">' + p.shelf_id + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    document.getElementById('dockSummary').innerHTML = html;
+}
+
+function dockBack() {
+    var shipment = docks[activeDock];
+    if (!shipment || shipment.step <= 1) return;
+    shipment.step--;
+    renderDockContent();
+}
+
+function dockNext() {
+    var shipment = docks[activeDock];
+    if (!shipment) return;
+    if (shipment.step === 1) { shipment.step = 2; renderDockContent(); }
+    else if (shipment.step === 2) {
+        shipment.pallets.forEach(function(p, i) {
+            var input = document.getElementById('dockShelf_' + shipment.dockId + '_' + i);
+            if (input) p.shelf_id = input.value;
+        });
+        shipment.step = 3;
+        renderDockContent();
+    } else if (shipment.step === 3) { placeShipment(shipment); }
+}
+
+function placeShipment(shipment) {
+    var csrfToken = getCsrfToken();
+    var btn = document.getElementById('dockNextBtn');
+    btn.disabled = true;
+    btn.textContent = 'Placing...';
+    var promises = shipment.pallets.map(function(p) {
+        return fetch('/api/add-delivery/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+            body: JSON.stringify({
+                manufacturer: p.manufacturer, date: p.date, size: p.size,
+                batch_id: p.batch_id, quantity: p.quantity,
+                shelf_id: p.shelf_id, material_id: p.material_id
+            })
+        }).then(function(r) { return r.json(); });
+    });
+    Promise.all(promises).then(function(results) {
+        var dockId = shipment.dockId;
+        docks[dockId] = null;
+        promoteFromQueue(dockId);
+        updateDockTabStates();
+        renderDockContent();
+        btn.disabled = false;
+        btn.textContent = 'Place Shipment';
+        window.location.reload();
+    });
+}
+
+function renderQueue() {
+    var list = document.getElementById('queueList');
+    var badge = document.getElementById('queueBadge');
+    var empty = document.getElementById('queueEmpty');
+    var queueStat = document.getElementById('queueCountStat');
+    badge.textContent = shipmentQueue.length;
+    if (queueStat) queueStat.textContent = shipmentQueue.length;
+    if (shipmentQueue.length === 0) {
+        empty.style.display = '';
+        list.querySelectorAll('.dock-queue-item').forEach(function(el) { el.remove(); });
+        return;
+    }
+    empty.style.display = 'none';
+    list.querySelectorAll('.dock-queue-item').forEach(function(el) { el.remove(); });
+    shipmentQueue.forEach(function(s, i) {
+        var item = document.createElement('div');
+        item.className = 'dock-queue-item';
+        item.innerHTML = '<div class="dock-queue-item-title">Shipment #' + s.id + '</div><div class="dock-queue-item-info">' + (s.pallets.length || '?') + ' pallets</div>';
+        item.onclick = function() { promoteQueueItem(i); };
+        list.appendChild(item);
+    });
+}
+
+function promoteFromQueue(freeDockId) {
+    if (shipmentQueue.length === 0) return;
+    var shipment = shipmentQueue.shift();
+    shipment.dockId = freeDockId;
+    shipment.step = 0;
+    shipment.status = 'scanning';
+    docks[freeDockId] = shipment;
+    blinkDockTab(freeDockId);
+    startScanning(shipment);
+    renderQueue();
+}
+
+function promoteQueueItem(queueIndex) {
+    var freeDock = null;
+    for (var d = 1; d <= NUM_DOCKS; d++) { if (!docks[d]) { freeDock = d; break; } }
+    if (!freeDock) return;
+    var shipment = shipmentQueue.splice(queueIndex, 1)[0];
+    shipment.dockId = freeDock;
+    shipment.step = 0;
+    shipment.status = 'scanning';
+    docks[freeDock] = shipment;
+    blinkDockTab(freeDock);
+    switchDock(freeDock);
+    startScanning(shipment);
+    renderQueue();
+    updateDockTabStates();
+}
+
+// =============================================
+// Shelf Overlay + Store Buttons
+// =============================================
+document.addEventListener('DOMContentLoaded', function() {
+    var overlay = document.getElementById('shelfOverlay');
+    var closeBtn = document.getElementById('shelfCloseBtn');
+    var whSelect = document.getElementById('warehouseSelect');
+
+    if (whSelect) {
+        whSelect.addEventListener('change', function() {
+            fetch('/api/set-warehouse/', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken()},
+                body: JSON.stringify({warehouse_id: parseInt(this.value)})
+            }).then(function() { window.location.reload(); });
+        });
+    }
+
+    var pageContent = document.querySelector('.op-page-content');
+
+    function openShelfOverlay(shelfId, deliveryId) {
+        if (pageContent) { pageContent.scrollTop = 0; pageContent.style.overflow = 'hidden'; }
+        overlay.classList.add('active');
+        document.querySelectorAll('.op-table tr.op-row-active').forEach(function(r) { r.classList.remove('op-row-active'); });
+        var row = document.querySelector('tr[data-delivery-id="' + deliveryId + '"]');
+        if (row) row.classList.add('op-row-active');
+        Shelf3D.open(shelfId, deliveryId);
+    }
+
+    function closeShelfOverlay() {
+        overlay.classList.remove('active');
+        if (pageContent) pageContent.style.overflow = '';
+        document.querySelectorAll('.op-table tr.op-row-active').forEach(function(r) { r.classList.remove('op-row-active'); });
+        Shelf3D.close();
+    }
+
+    closeBtn.addEventListener('click', closeShelfOverlay);
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && overlay.classList.contains('active')) closeShelfOverlay();
+    });
+
+    document.querySelectorAll('.op-btn-store').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            openShelfOverlay(this.dataset.shelfId, this.dataset.deliveryId);
+        });
+    });
+});
+
+// =============================================
+// Filter & Sort
+// =============================================
+var currentSort = { field: null, dir: 0 }; // dir: 0=none, 1=asc, -1=desc
+
+function filterDeliveries() {
+    var query = (document.getElementById('deliverySearch').value || '').toLowerCase();
+    var rows = document.querySelectorAll('#deliveryTable tbody tr');
+    rows.forEach(function(row) {
+        if (!row.dataset.deliveryId) return; // skip empty row
+        var text = row.textContent.toLowerCase();
+        row.style.display = text.indexOf(query) >= 0 ? '' : 'none';
+    });
+}
+
+function toggleSort(field) {
+    if (currentSort.field === field) {
+        currentSort.dir = currentSort.dir === 1 ? -1 : (currentSort.dir === -1 ? 0 : 1);
+    } else {
+        currentSort.field = field;
+        currentSort.dir = 1;
+    }
+    // Update arrows
+    document.getElementById('arrowDate').textContent = field === 'date' ? (currentSort.dir === 1 ? '↑' : currentSort.dir === -1 ? '↓' : '↕') : '↕';
+    document.getElementById('arrowQty').textContent = field === 'qty' ? (currentSort.dir === 1 ? '↑' : currentSort.dir === -1 ? '↓' : '↕') : '↕';
+    document.getElementById('sortDateBtn').classList.toggle('active', field === 'date' && currentSort.dir !== 0);
+    document.getElementById('sortQtyBtn').classList.toggle('active', field === 'qty' && currentSort.dir !== 0);
+
+    if (currentSort.dir === 0) { currentSort.field = null; window.location.reload(); return; }
+
+    var tbody = document.querySelector('#deliveryTable tbody');
+    var rows = Array.from(tbody.querySelectorAll('tr[data-delivery-id]'));
+    rows.sort(function(a, b) {
+        var va, vb;
+        if (field === 'date') {
+            // Date column is 3rd td (index 2)
+            va = a.children[2] ? a.children[2].textContent.trim() : '';
+            vb = b.children[2] ? b.children[2].textContent.trim() : '';
+            va = new Date(va).getTime() || 0;
+            vb = new Date(vb).getTime() || 0;
+        } else {
+            // Qty column is 5th td (index 4)
+            va = a.children[4] ? parseInt(a.children[4].textContent, 10) || 0 : 0;
+            vb = b.children[4] ? parseInt(b.children[4].textContent, 10) || 0 : 0;
+        }
+        return (va - vb) * currentSort.dir;
+    });
+    rows.forEach(function(r) { tbody.appendChild(r); });
+}
+
+// =============================================
+// Warehouse Map
+// =============================================
+var cachedMapSectors = null;
+var cachedMapLayout = null;
+
+function openMapOverlay() {
+    var pc = document.querySelector('.op-page-content');
+    if (pc) { pc.scrollTop = 0; pc.style.overflow = 'hidden'; }
+    var overlay = document.getElementById('mapOverlay');
+    if (overlay) {
+        overlay.classList.add('active');
+        loadMapData();
+    }
+}
+
+function closeMapOverlay() {
+    var overlay = document.getElementById('mapOverlay');
+    if (overlay) overlay.classList.remove('active');
+    var pc = document.querySelector('.op-page-content');
+    if (pc) pc.style.overflow = '';
+}
+
+function loadMapData() {
+    var grid = document.getElementById('mapGrid');
+    grid.innerHTML = '<p style="color:#999;font-size:0.85rem;">Loading warehouse data...</p>';
+
+    fetch('/api/warehouse-map/')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            cachedMapSectors = data.sectors;
+            cachedMapLayout = data.layout;
+
+            var sel = document.getElementById('mapStartSector');
+            if (sel) {
+                sel.innerHTML = '<option value="">Auto</option>';
+                var sKeys = Object.keys(data.sectors).sort(function(a,b){ return parseInt(a)-parseInt(b); });
+                sKeys.forEach(function(s) {
+                    sel.innerHTML += '<option value="' + s + '">Sector ' + s + '</option>';
+                });
+            }
+
+            if (data.layout && data.layout.cells && data.layout.cells.length > 0) {
+                renderDynamicMap(data.layout);
+            } else {
+                renderSectorMap(data.sectors);
+            }
+        })
+        .catch(function() {
+            grid.innerHTML = '<p style="color:#c62828;font-size:0.85rem;">Failed to load map data</p>';
+        });
+}
+
+function renderDynamicMap(layout) {
+    var grid = document.getElementById('mapGrid');
+    var gridRows = layout.grid_rows;
+    var gridCols = layout.grid_cols;
+    var cells = layout.cells;
+
+    var cellMap = {};
+    cells.forEach(function(c) { cellMap[c.row + ',' + c.col] = c; });
+
+    grid.style.gridTemplateColumns = 'repeat(' + gridCols + ', 44px)';
+    var html = '';
+    for (var r = 0; r < gridRows; r++) {
+        for (var c = 0; c < gridCols; c++) {
+            var cell = cellMap[r + ',' + c] || { cell_type: 'empty' };
+            var cls = 'op-map-cell cell-' + cell.cell_type;
+            var attrs = '';
+            var inner = '';
+
+            if (cell.cell_type === 'storage' && cell.sector != null && cell.unit) {
+                if (cell.status === 'full') cls += ' occ-full';
+                else if (cell.status === 'partial') cls += ' occ-partial';
+                else if (cell.status === 'empty') cls += ' occ-empty';
+                var shelfId = cell.sector + '-' + cell.unit + '-1';
+                attrs = ' data-sector="' + cell.sector + '" data-unit="' + cell.unit + '" onclick="closeMapOverlay(); Shelf3D.open(\'' + shelfId + '\')" title="' + (cell.label||'') + ': ' + (cell.occupied||0) + '/' + (cell.total||0) + '"';
+                inner = '<span style="font-size:0.55rem;">' + (cell.label || '') + '</span>';
+            } else if (cell.cell_type === 'dock') {
+                inner = '<span style="font-size:0.55rem;">D</span>';
+                attrs = ' title="Loading Dock"';
+            } else if (cell.cell_type === 'wall') {
+                attrs = ' title="Wall"';
+            }
+
+            html += '<div class="' + cls + '"' + attrs + '>' + inner + '</div>';
+        }
+    }
+    grid.innerHTML = html;
+}
+
+function renderSectorMap(sectors) {
+    var grid = document.getElementById('mapGrid');
+    var sKeys = Object.keys(sectors).sort(function(a,b){ return parseInt(a)-parseInt(b); });
+    var html = '';
+    sKeys.forEach(function(s) {
+        var sectorData = sectors[s];
+        var unitKeys = Object.keys(sectorData).sort();
+        html += '<div style="grid-column:1/-1;padding:8px 0 4px;font-size:0.75rem;font-weight:700;color:#333;">Sector ' + s + '</div>';
+        unitKeys.forEach(function(u) {
+            var unitData = sectorData[u];
+            var shelfKeys = Object.keys(unitData).sort(function(a,b){ return parseInt(a)-parseInt(b); });
+            shelfKeys.forEach(function(sh) {
+                var shelf = unitData[sh];
+                var cls = 'op-map-cell cell-storage';
+                if (shelf.status === 'full') cls += ' occ-full';
+                else if (shelf.status === 'partial') cls += ' occ-partial';
+                else cls += ' occ-empty';
+                var shelfId = s + '-' + u + '-' + sh;
+                html += '<div class="' + cls + '" title="' + shelfId + ': ' + shelf.occupied + '/' + shelf.total + '" onclick="closeMapOverlay(); Shelf3D.open(\'' + shelfId + '\')">';
+                html += '<span style="font-size:0.5rem;">' + u + sh + '</span></div>';
+            });
+        });
+    });
+    grid.style.gridTemplateColumns = 'repeat(6, 44px)';
+    grid.innerHTML = html;
+}
+
+function calcOptimalRoute() {
+    if (!cachedMapSectors) return;
+
+    var startSelect = document.getElementById('mapStartSector');
+    var startSector = startSelect ? parseInt(startSelect.value, 10) : 1;
+    if (isNaN(startSector) || startSector < 1) startSector = 1;
+
+    var sectorKeys = Object.keys(cachedMapSectors).sort(function(a,b){ return parseInt(a)-parseInt(b); });
+    var targets = [];
+
+    for (var si = 0; si < sectorKeys.length; si++) {
+        var s = sectorKeys[si];
+        var sectorData = cachedMapSectors[s];
+        if (!sectorData) continue;
+        var unitKeys = Object.keys(sectorData).sort();
+        for (var ui = 0; ui < unitKeys.length; ui++) {
+            var u = unitKeys[ui];
+            var unitData = sectorData[u];
+            if (!unitData) continue;
+            var shelfKeys = Object.keys(unitData).sort(function(a,b){ return parseInt(a)-parseInt(b); });
+            for (var shi = 0; shi < shelfKeys.length; shi++) {
+                var sh = shelfKeys[shi];
+                var shelf = unitData[sh];
+                if (shelf && shelf.status === 'partial') {
+                    targets.push({
+                        sector: parseInt(s), unit: u, unitIdx: ui, shelf: parseInt(sh),
+                        shelfId: s + '-' + u + '-' + sh,
+                        occupied: shelf.occupied,
+                        free: shelf.total - shelf.occupied
+                    });
+                }
+            }
+        }
+    }
+
+    if (targets.length === 0) {
+        document.getElementById('mapRouteInfo').textContent = 'No partially-filled shelves to route.';
+        return;
+    }
+
+    // Group by sector-unit
+    var groups = {};
+    targets.forEach(function(t) {
+        var key = t.sector + '-' + t.unit;
+        if (!groups[key]) groups[key] = { sector: t.sector, unitIdx: t.unitIdx, shelves: [] };
+        groups[key].shelves.push(t);
+    });
+    Object.keys(groups).forEach(function(key) {
+        groups[key].shelves.sort(function(a, b) { return b.occupied - a.occupied; });
+    });
+
+    var allGroups = Object.keys(groups).map(function(k) { return groups[k]; });
+    allGroups.sort(function(a, b) {
+        if (a.sector !== b.sector) return a.sector - b.sector;
+        return a.unitIdx - b.unitIdx;
+    });
+
+    var minSector = Infinity, maxSector = -Infinity;
+    allGroups.forEach(function(g) {
+        if (g.sector < minSector) minSector = g.sector;
+        if (g.sector > maxSector) maxSector = g.sector;
+    });
+
+    var distToMax = maxSector - startSector;
+    var distToMin = startSector - minSector;
+    var visited = [];
+    var goHighFirst = distToMax <= distToMin;
+
+    if (goHighFirst) {
+        allGroups.filter(function(g) { return g.sector >= startSector; })
+            .forEach(function(g) { g.shelves.forEach(function(s) { visited.push(s); }); });
+        allGroups.filter(function(g) { return g.sector < startSector; })
+            .sort(function(a, b) { return b.sector !== a.sector ? b.sector - a.sector : a.unitIdx - b.unitIdx; })
+            .forEach(function(g) { g.shelves.forEach(function(s) { visited.push(s); }); });
+    } else {
+        allGroups.filter(function(g) { return g.sector <= startSector; })
+            .sort(function(a, b) { return b.sector !== a.sector ? b.sector - a.sector : a.unitIdx - b.unitIdx; })
+            .forEach(function(g) { g.shelves.forEach(function(s) { visited.push(s); }); });
+        allGroups.filter(function(g) { return g.sector > startSector; })
+            .forEach(function(g) { g.shelves.forEach(function(s) { visited.push(s); }); });
+    }
+
+    renderRoute(visited);
+    document.getElementById('mapRouteInfo').textContent = visited.length + ' stops optimized';
+}
+
+function renderRoute(route) {
+    // Clear previous route badges
+    document.querySelectorAll('.map-route-badge').forEach(function(el) { el.remove(); });
+
+    // Add numbered badges to cells on the dynamic map
+    route.forEach(function(stop, idx) {
+        var cells = document.querySelectorAll('.op-map-cell[data-sector]');
+        cells.forEach(function(el) {
+            if (el.dataset.sector == stop.sector && el.dataset.unit == stop.unit) {
+                var badge = document.createElement('span');
+                badge.className = 'map-route-badge';
+                badge.textContent = idx + 1;
+                el.appendChild(badge);
+            }
+        });
+        // Also check title-based shelf matching for sector maps
+        var shelfEls = document.querySelectorAll('.op-map-cell.cell-storage');
+        shelfEls.forEach(function(el) {
+            var title = el.getAttribute('title') || '';
+            if (title.indexOf(stop.shelfId + ':') === 0 && !el.querySelector('.map-route-badge')) {
+                var badge = document.createElement('span');
+                badge.className = 'map-route-badge';
+                badge.textContent = idx + 1;
+                el.appendChild(badge);
+            }
+        });
+    });
+}
+
+// Close map on Escape
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        var mapOverlay = document.getElementById('mapOverlay');
+        if (mapOverlay && mapOverlay.classList.contains('active')) {
+            closeMapOverlay();
+            e.stopPropagation();
+        }
+    }
+});
+</script>
+{% endblock %}

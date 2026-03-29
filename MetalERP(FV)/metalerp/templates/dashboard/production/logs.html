@@ -1,0 +1,86 @@
+{% extends "base_production.html" %}
+{% load static %}
+
+{% block title %}Stremet — System Logs{% endblock %}
+
+{% block ui_content %}
+<div class="op-page-content">
+    <div class="op-page-header">
+        <h1 class="op-page-title">System Logs</h1>
+    </div>
+
+    <!-- Filter Bar -->
+    <form method="get" class="ps-filter-bar">
+        <select name="event_type" class="op-select">
+            <option value="">All Types</option>
+            <option value="delivery" {% if filter_event_type == 'delivery' %}selected{% endif %}>Delivery</option>
+            <option value="manufacturing" {% if filter_event_type == 'manufacturing' %}selected{% endif %}>Manufacturing</option>
+            <option value="scrap" {% if filter_event_type == 'scrap' %}selected{% endif %}>Scrap</option>
+            <option value="machine" {% if filter_event_type == 'machine' %}selected{% endif %}>Machine</option>
+            <option value="material" {% if filter_event_type == 'material' %}selected{% endif %}>Material</option>
+            <option value="warehouse" {% if filter_event_type == 'warehouse' %}selected{% endif %}>Warehouse</option>
+            <option value="shipment" {% if filter_event_type == 'shipment' %}selected{% endif %}>Shipment</option>
+            <option value="threshold" {% if filter_event_type == 'threshold' %}selected{% endif %}>Threshold</option>
+        </select>
+        <select name="severity" class="op-select">
+            <option value="">All Severity</option>
+            <option value="info" {% if filter_severity == 'info' %}selected{% endif %}>Info</option>
+            <option value="warning" {% if filter_severity == 'warning' %}selected{% endif %}>Warning</option>
+            <option value="error" {% if filter_severity == 'error' %}selected{% endif %}>Error</option>
+            <option value="critical" {% if filter_severity == 'critical' %}selected{% endif %}>Critical</option>
+        </select>
+        <input type="text" name="search" value="{{ filter_search }}" placeholder="Search logs..." class="op-input">
+        <input type="date" name="date_from" value="{{ filter_date_from }}" class="op-input">
+        <input type="date" name="date_to" value="{{ filter_date_to }}" class="op-input">
+        <button type="submit" class="ps-filter-btn">Filter</button>
+        {% if filter_event_type or filter_severity or filter_search or filter_date_from or filter_date_to %}
+        <a href="{% url 'dashboard:production_logs' %}" class="ps-filter-clear">Clear</a>
+        {% endif %}
+    </form>
+
+    <!-- Logs Table -->
+    <div class="ps-table-wrap">
+        <table class="ps-table">
+            <thead>
+                <tr>
+                    <th style="width: 150px;">Timestamp</th>
+                    <th style="width: 100px;">Type</th>
+                    <th style="width: 80px;">Severity</th>
+                    <th>Title</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr id="log-{{ log.id }}" class="{% if highlight_id == log.id %}ps-log-highlight{% endif %}">
+                    <td class="ps-cell-time">{{ log.timestamp|date:"M d, H:i:s" }}</td>
+                    <td><span class="ps-type-badge ps-type-{{ log.event_type }}">{{ log.event_type }}</span></td>
+                    <td>
+                        <span class="ps-severity-dot ps-sev-{{ log.severity }}"></span>
+                        {{ log.severity }}
+                    </td>
+                    <td>{{ log.title }}</td>
+                    <td class="ps-cell-desc">{{ log.description|truncatewords:20 }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="5" class="ps-empty">No logs found</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+(function() {
+    var hash = window.location.hash;
+    if (hash && hash.startsWith('#log-')) {
+        var el = document.querySelector(hash);
+        if (el) {
+            setTimeout(function() {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 200);
+        }
+    }
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block title %}Settings - Stremet{% endblock %}
+
+{% block content %}
+<div class="dashboard-hero">
+    <div class="dashboard-header">
+        <h1 class="dashboard-title">Settings</h1>
+        <p class="dashboard-subtitle">Configure your AI assistant and integrations</p>
+    </div>
+
+    <div class="settings-grid">
+        <!-- Warehouse Layout Configuration -->
+        <div class="settings-card">
+            <div class="settings-card-header">
+                <div class="settings-card-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                </div>
+                <div>
+                    <h2 class="settings-card-title">Warehouse Layout</h2>
+                    <p class="settings-card-desc">Configure your warehouse floor plan — set dimensions, shape, and mark walls to match your physical space.</p>
+                </div>
+            </div>
+            <div class="settings-card-body">
+                {% for wh in warehouses %}
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;{% if not forloop.last %}border-bottom:1px solid var(--glass-border);{% endif %}">
+                    <div>
+                        <span style="font-weight:600;font-size:0.85rem;color:var(--text-primary)">{{ wh.name }}</span>
+                        <span style="font-size:0.75rem;color:var(--text-muted);margin-left:6px">{{ wh.code }}</span>
+                        {% if wh.layout_configured %}
+                        <span style="font-size:0.68rem;color:#059669;margin-left:8px;font-weight:500">Configured</span>
+                        {% else %}
+                        <span style="font-size:0.68rem;color:var(--text-muted);margin-left:8px">Default layout</span>
+                        {% endif %}
+                    </div>
+                    <a href="{% url 'dashboard:warehouse_setup' wh.id %}" class="settings-save-btn" style="text-decoration:none;padding:6px 14px;font-size:0.78rem">Configure</a>
+                </div>
+                {% empty %}
+                <p style="color:var(--text-muted);font-size:0.82rem">No warehouses found. Create one first.</p>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Gemini AI Configuration -->
+        <div class="settings-card">
+            <div class="settings-card-header">
+                <div class="settings-card-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"/><path d="M18 14l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3z" opacity="0.6"/></svg>
+                </div>
+                <div>
+                    <h2 class="settings-card-title">Gemini AI (Vertex AI)</h2>
+                    <p class="settings-card-desc">Connect your Google Cloud project to power the AI assistant with Gemini.</p>
+                </div>
+                <div class="settings-status {% if has_credentials %}connected{% else %}disconnected{% endif %}">
+                    {% if has_credentials %}Connected{% else %}Not configured{% endif %}
+                </div>
+            </div>
+
+            <div class="settings-card-body">
+                <!-- Setup guide -->
+                <div class="settings-setup-guide">
+                    <div class="settings-guide-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                        How to connect
+                    </div>
+                    <ol class="settings-guide-steps">
+                        <li>Go to the <a href="https://console.cloud.google.com/apis/library/aiplatform.googleapis.com" target="_blank" rel="noopener">Google Cloud Console</a> and enable the <strong>Vertex AI API</strong> for your project</li>
+                        <li>Navigate to <a href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank" rel="noopener">IAM &amp; Admin &rarr; Service Accounts</a></li>
+                        <li>Click <strong>Create Service Account</strong>, give it a name, and grant the <strong>Vertex AI User</strong> role</li>
+                        <li>Click the service account, go to the <strong>Keys</strong> tab, then <strong>Add Key &rarr; Create new key &rarr; JSON</strong></li>
+                        <li>Copy your <strong>Project ID</strong> from the top of the console (or from the downloaded JSON's <code>project_id</code> field)</li>
+                        <li>Paste the Project ID and the full JSON key contents below</li>
+                    </ol>
+                </div>
+
+                <div class="settings-field">
+                    <label for="gcpProjectId">GCP Project ID</label>
+                    <input type="text" id="gcpProjectId" placeholder="my-gcp-project-123" value="{{ ai_settings.gcp_project_id }}">
+                    <span class="settings-field-hint">Found at the top of your Google Cloud Console, or in the JSON key file as <code>project_id</code></span>
+                </div>
+
+                <div class="settings-field">
+                    <label for="serviceAccountJson">Service Account JSON Key</label>
+                    <textarea id="serviceAccountJson" rows="8" placeholder='Paste the entire contents of your downloaded JSON key file here...'>{% if ai_settings.service_account_json %}{{ ai_settings.service_account_json }}{% endif %}</textarea>
+                    <span class="settings-field-hint">The full JSON file downloaded from Google Cloud &rarr; Service Accounts &rarr; Keys</span>
+                </div>
+
+                <div class="settings-actions">
+                    <button id="saveAiSettings" class="settings-save-btn">Save credentials</button>
+                    <span id="settingsSaveStatus" class="settings-save-status"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.settings-setup-guide {
+    background: rgba(59, 130, 246, 0.04);
+    border: 1px solid rgba(59, 130, 246, 0.12);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+}
+.settings-guide-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 10px;
+}
+.settings-guide-steps {
+    margin: 0;
+    padding-left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.settings-guide-steps li {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+.settings-guide-steps a {
+    color: #2563EB;
+    text-decoration: none;
+    font-weight: 500;
+}
+.settings-guide-steps a:hover {
+    text-decoration: underline;
+}
+.settings-guide-steps code {
+    background: rgba(0,0,0,0.05);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-family: 'DM Sans', monospace;
+}
+</style>
+
+<script>
+(function() {
+    const saveBtn = document.getElementById('saveAiSettings');
+    const status = document.getElementById('settingsSaveStatus');
+
+    function getCSRFToken() {
+        const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
+        return cookie ? cookie.split('=')[1] : '';
+    }
+
+    saveBtn.addEventListener('click', async function() {
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Saving...';
+        status.textContent = '';
+
+        const svcJson = document.getElementById('serviceAccountJson').value.trim();
+        let projectId = document.getElementById('gcpProjectId').value.trim();
+
+        // Try to auto-extract project_id from the JSON if user left the field empty
+        if (!projectId && svcJson) {
+            try {
+                const parsed = JSON.parse(svcJson);
+                if (parsed.project_id) {
+                    projectId = parsed.project_id;
+                    document.getElementById('gcpProjectId').value = projectId;
+                }
+            } catch(e) {}
+        }
+
+        const data = {
+            gcp_project_id: projectId,
+            service_account_json: svcJson,
+        };
+
+        try {
+            const resp = await fetch('/api/save-ai-settings/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCSRFToken(),
+                },
+                body: JSON.stringify(data),
+            });
+            const result = await resp.json();
+            if (resp.ok) {
+                status.textContent = 'Saved successfully';
+                status.className = 'settings-save-status success';
+                const badge = document.querySelector('.settings-status');
+                if (data.gcp_project_id && data.service_account_json) {
+                    badge.className = 'settings-status connected';
+                    badge.textContent = 'Connected';
+                }
+            } else {
+                status.textContent = result.error || 'Failed to save';
+                status.className = 'settings-save-status error';
+            }
+        } catch (e) {
+            status.textContent = 'Network error';
+            status.className = 'settings-save-status error';
+        } finally {
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Save credentials';
+        }
+    });
+})();
+</script>
+{% endblock %}

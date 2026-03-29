@@ -1,0 +1,1585 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Delivery - Stremet{% endblock %}
+{% block page_title %}Delivery{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<!-- Toolbar: Search + New Delivery -->
+<div class="delivery-toolbar">
+    <select id="warehouseSelector" class="warehouse-select" onchange="switchWarehouse(this.value)">
+        {% for wh in warehouses %}
+        <option value="{{ wh.id }}" {% if wh.id == current_warehouse.id %}selected{% endif %}>{{ wh.name }}</option>
+        {% endfor %}
+    </select>
+    <div class="content-search">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(0,0,0,0.3)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" placeholder="Search deliveries, manufacturers, batches..." id="searchInput">
+    </div>
+    <button class="btn-toolbar-action" onclick="openWarehouseMap()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        Map
+    </button>
+    <span class="toolbar-capacity" id="toolbarCapacity">{{ occupied_slots }} / {{ total_slots }} Slots</span>
+    <button class="btn-toolbar-action" onclick="navigateRoute()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+        Navigate
+    </button>
+    <button class="btn-toolbar-action" onclick="refreshTable()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        Refresh
+    </button>
+    <button class="btn-toolbar-action" onclick="showDeletedShipments()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        Deleted
+    </button>
+    <button class="btn-delete-confirm" id="bulkDeleteBtn" style="display:none;" onclick="bulkDelete()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        Delete Selected (<span id="bulkCount">0</span>)
+    </button>
+    <button class="btn-add-delivery" onclick="triggerNewShipment()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        New Delivery
+    </button>
+</div>
+
+<!-- CSRF Token -->
+{% csrf_token %}
+
+<!-- Shipment Pipeline + Warehouse Capacity Stats -->
+<div class="delivery-stats-row">
+    <div class="delivery-stat-card glass-subtle">
+        <div class="delivery-stat-icon stat-pending">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>
+        </div>
+        <div class="delivery-stat-content">
+            <span class="delivery-stat-value" data-count="{{ pending_count }}">{{ pending_count }}</span>
+            <span class="delivery-stat-label">Unstocked Palets</span>
+        </div>
+    </div>
+    <div class="delivery-stat-arrow">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(0,0,0,0.2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+    </div>
+    <div class="delivery-stat-card glass-subtle">
+        <div class="delivery-stat-icon stat-queue">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+        </div>
+        <div class="delivery-stat-content">
+            <span class="delivery-stat-value" id="queueCountStat">0</span>
+            <span class="delivery-stat-label">In Queue</span>
+        </div>
+    </div>
+    <div class="delivery-stat-arrow">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(0,0,0,0.2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+    </div>
+    <div class="delivery-stat-card glass-subtle">
+        <div class="delivery-stat-icon stat-done">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        </div>
+        <div class="delivery-stat-content">
+            <span class="delivery-stat-value" data-count="{{ stored_count }}">{{ stored_count }}</span>
+            <span class="delivery-stat-label">Stored</span>
+        </div>
+    </div>
+
+</div>
+
+<!-- Live Delivery Status — Dock Card -->
+<div class="dock-card glass" id="dockCard">
+    <div class="dock-card-inner">
+        <!-- Queue Panel (left) -->
+        <div class="dock-queue-panel">
+            <div class="dock-queue-header">
+                <span class="dock-queue-title">Queue</span>
+                <span class="dock-queue-badge" id="queueBadge">0</span>
+            </div>
+            <div class="dock-queue-list" id="queueList">
+                <div class="dock-queue-empty" id="queueEmpty">No shipments queued</div>
+            </div>
+        </div>
+
+        <!-- Info Panel (right) -->
+        <div class="dock-info-panel">
+            <!-- Dock Tabs -->
+            <div class="dock-tabs-bar">
+                <div class="dock-tabs" id="dockTabs">
+                    {% for dock_num in dock_range %}
+                    <button class="dock-tab {% if dock_num == 1 %}active{% endif %}" data-dock="{{ dock_num }}" onclick="switchDock({{ dock_num }})">
+                        <span class="dock-tab-dot"></span>Dock {{ dock_num }}
+                    </button>
+                    {% endfor %}
+                </div>
+                <button class="dock-minimize-btn" onclick="toggleDockCard()" title="Minimize">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                </button>
+            </div>
+
+            <!-- Step Content -->
+            <div class="dock-step-content" id="dockStepContent">
+                <!-- Empty State -->
+                <div class="dock-empty-state" id="dockEmptyState">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(0,0,0,0.15)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>
+                    <p>No shipment on this dock</p>
+                    <span>Press <kbd>N</kbd> to detect a new shipment</span>
+                </div>
+
+                <!-- Step 0: 3D Dock Scanning -->
+                <div class="dock-step" id="dockStep0">
+                    <div class="dock-3d-scan-container" id="dockScan3DContainer"></div>
+                    <h3 class="dock-scan-title" id="dockScanTitle">Scanning dock area...</h3>
+                    <p class="dock-scan-subtitle" id="dockScanSubtitle">Detecting incoming shipment</p>
+                </div>
+
+                <!-- Step 1: Detected Pallets -->
+                <div class="dock-step" id="dockStep1">
+                    <div class="dock-step-header">
+                        <h3>Shipment Detected</h3>
+                        <p>The following pallets were detected on the dock.</p>
+                    </div>
+                    <div class="dock-pallets" id="dockPallets"></div>
+                </div>
+
+                <!-- Step 2: Assign Locations -->
+                <div class="dock-step" id="dockStep2">
+                    <div class="dock-step-header">
+                        <h3>Assign Shelf Locations</h3>
+                        <p>Verify or edit shelf assignments for each pallet.</p>
+                    </div>
+                    <div class="dock-pallets" id="dockAssign"></div>
+                </div>
+
+                <!-- Step 3: Confirm -->
+                <div class="dock-step" id="dockStep3">
+                    <div class="dock-step-header">
+                        <h3>Confirm Placement</h3>
+                        <p>Review and confirm all pallet assignments.</p>
+                    </div>
+                    <div class="dock-summary" id="dockSummary"></div>
+                </div>
+            </div>
+
+            <!-- Step Indicator + Nav -->
+            <div class="dock-nav" id="dockNav" style="display:none;">
+                <div class="dock-step-dots">
+                    <span class="dock-dot active" data-step="0">1</span>
+                    <span class="dock-dot-line"></span>
+                    <span class="dock-dot" data-step="1">2</span>
+                    <span class="dock-dot-line"></span>
+                    <span class="dock-dot" data-step="2">3</span>
+                    <span class="dock-dot-line"></span>
+                    <span class="dock-dot" data-step="3">4</span>
+                </div>
+                <div class="dock-nav-btns">
+                    <button class="btn-regenerate" id="dockBackBtn" onclick="dockBack()">Back</button>
+                    <button class="btn-confirm-delivery" id="dockNextBtn" onclick="dockNext()">Next</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filter Bar -->
+<div class="filter-bar glass-subtle">
+    <div class="filter-search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(0,0,0,0.3)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="filterDeliveryNum" placeholder="Filter by delivery #..." class="filter-input" oninput="filterByDelivery()">
+    </div>
+    <div class="filter-toggles">
+        <button class="filter-toggle" onclick="toggleSort('date')">
+            Date <span class="filter-arrow" id="arrowDate">↕</span>
+        </button>
+        <button class="filter-toggle" onclick="toggleSort('quantity')">
+            Qty <span class="filter-arrow" id="arrowQty">↕</span>
+        </button>
+    </div>
+</div>
+
+<!-- Deliveries Table -->
+<div class="table-container">
+    <table class="data-table" id="deliveryTable">
+        <thead>
+            <tr>
+                <th style="width:32px;"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this)"></th>
+                <th>Delivery #</th>
+                <th>Vendors</th>
+                <th>Date & Time</th>
+                <th>Size</th>
+                <th>Batch ID</th>
+                <th>Qty</th>
+                <th>Shelf</th>
+                <th>Shipment</th>
+                <th>Shelf Status</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for d in deliveries %}
+            <tr data-shelf="{{ d.shelf_id }}" data-delivery-id="{{ d.id }}">
+                <td><input type="checkbox" class="row-checkbox" value="{{ d.id }}" onchange="updateBulkActions()"></td>
+                <td class="cell-id">#{{ d.id }}</td>
+                <td class="cell-name">{{ d.manufacturer }}</td>
+                <td>{{ d.created_at }}</td>
+                <td class="cell-mono">{{ d.size }}</td>
+                <td class="cell-mono">{{ d.batch_id }}</td>
+                <td>{{ d.quantity }}</td>
+                <td class="cell-mono">{{ d.shelf_id }}</td>
+                <td>
+                    {% if d.status == 'stored' %}
+                    <span class="status-badge shipment-status placed">Placed</span>
+                    {% else %}
+                    <span class="status-badge shipment-status not-placed">Not Placed</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if d.shelf_full %}
+                    <span class="status-badge shelf-status shelf-full-badge">Full ({{ d.shelf_occupied }}/4)</span>
+                    {% else %}
+                    <span class="status-badge shelf-status shelf-open-badge">Open ({{ d.shelf_occupied }}/4)</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <button class="btn-arrived" onclick="Shelf3D.open('{{ d.shelf_id }}')">Arrived</button>
+                    <button class="btn-delete-delivery" onclick="showDeleteModal({{ d.id }})">Delete</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Warehouse Map Modal -->
+<div class="map-modal-overlay" id="mapModalOverlay">
+    <div class="map-modal glass">
+        <div class="map-modal-top">
+            <h2 class="map-modal-title">Warehouse Map</h2>
+            <div class="map-legend">
+                <span class="map-legend-item"><span class="map-legend-dot map-dot-full"></span>Full</span>
+                <span class="map-legend-item"><span class="map-legend-dot map-dot-partial"></span>Needs Stocking</span>
+                <span class="map-legend-item"><span class="map-legend-dot map-dot-empty"></span>Empty</span>
+            </div>
+            <div class="map-start-selector">
+                <label class="map-start-label">Start from:</label>
+                <select id="mapStartSector" class="map-start-select">
+                    <option value="">Auto</option>
+                </select>
+                <button class="btn-toolbar-action btn-optimize" onclick="calcOptimalRoute()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+                    Optimize
+                </button>
+            </div>
+            {% if current_warehouse %}
+            <a href="{% url 'dashboard:warehouse_setup' current_warehouse.id %}" class="btn-toolbar-action" style="text-decoration:none;font-size:0.75rem" title="Configure warehouse layout">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                Configure
+            </a>
+            {% endif %}
+            <button class="shelf-modal-close" onclick="closeWarehouseMap()" aria-label="Close">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="map-grid" id="mapGrid">
+            <div class="map-loading">Loading warehouse data...</div>
+        </div>
+    </div>
+</div>
+
+<!-- 3D Shelf Modal (Dual View) -->
+<div class="shelf-modal-overlay" id="shelfModalOverlay">
+    <div class="shelf-modal glass">
+        <div class="shelf-modal-top">
+            <div class="shelf-modal-tags" id="shelfModalHeader"></div>
+            <button class="shelf-modal-close" onclick="Shelf3D.close()" aria-label="Close">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+
+        <div class="shelf-modal-body dual-view">
+            <div class="view-pane view-topdown">
+                <div class="view-label">Top View</div>
+                <canvas id="topdownCanvas"></canvas>
+            </div>
+            <div class="view-pane view-3d">
+                <div class="view-label">3D View</div>
+                <div class="three-container" id="threeContainer"></div>
+
+                <div class="capacity-overlay">
+                    <svg class="capacity-ring-svg" viewBox="0 0 80 80">
+                        <circle cx="40" cy="40" r="36" fill="none" stroke="rgba(0,0,0,0.08)" stroke-width="4"/>
+                        <circle id="capacityRing" cx="40" cy="40" r="36" fill="none" stroke="rgba(0,0,0,0.6)" stroke-width="4"
+                                stroke-dasharray="226.2" stroke-dashoffset="226.2"
+                                stroke-linecap="round" transform="rotate(-90 40 40)"
+                                style="transition: stroke-dashoffset 0.6s ease"/>
+                    </svg>
+                    <div class="capacity-text">
+                        <span id="capacityPercent" class="capacity-percent">0%</span>
+                        <span class="capacity-label">Capacity</span>
+                    </div>
+                </div>
+
+                <div class="shelf-3d-label" id="shelfLabel3D"></div>
+            </div>
+        </div>
+
+        <div class="shelf-modal-footer">
+            <span id="shelfCapacity" class="shelf-capacity-text">0% Full</span>
+            <button id="markStoredBtn" class="btn-mark-stored" onclick="Shelf3D.markStored()">
+                Mark as Stored
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Reason Modal -->
+<div class="modal-overlay" id="deleteModalOverlay">
+    <div class="modal-card glass">
+        <h3 style="margin:0 0 8px 0;">Delete Shipment</h3>
+        <p style="margin:0 0 12px 0;color:var(--text-muted);font-size:13px;">Enter a reason for deleting this shipment:</p>
+        <input type="hidden" id="deleteDeliveryId">
+        <textarea id="deleteReason" placeholder="Reason for deletion..." rows="3" style="width:100%;padding:10px;border:1px solid rgba(0,0,0,0.1);border-radius:8px;font-family:inherit;font-size:13px;resize:none;"></textarea>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+            <button class="btn-toolbar-action" onclick="closeDeleteModal()">Cancel</button>
+            <button class="btn-delete-confirm" onclick="confirmDelete()">Confirm Delete</button>
+        </div>
+    </div>
+</div>
+
+<!-- Deleted Shipments Modal -->
+<div class="modal-overlay" id="deletedModalOverlay">
+    <div class="modal-card glass" style="max-width:850px;max-height:80vh;overflow:auto;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <h3 style="margin:0;">Deleted Shipments</h3>
+            <button class="shelf-modal-close" onclick="closeDeletedModal()" aria-label="Close">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div id="deletedListContainer" style="font-size:13px;">Loading...</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/shelf3d.js' %}"></script>
+<script>
+// =============================================
+// 3D Dock Scanning Scene
+// =============================================
+var DockScanScene = (function() {
+    var scene, camera, renderer, animId;
+    var pallet, scanBeam, scanGlow, dockPlatform;
+    var startTime = 0;
+
+    function init(container) {
+        if (!container || !container.isConnected) return;
+        dispose(); // cleanup any previous
+
+        var w = container.clientWidth || 300;
+        var h = container.clientHeight || 180;
+
+        scene = new THREE.Scene();
+
+        camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 50);
+        camera.position.set(3, 2.5, 3.5);
+        camera.lookAt(0, 0.4, 0);
+
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(w, h);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 0.9;
+        container.appendChild(renderer.domElement);
+
+        // Lighting
+        var ambient = new THREE.AmbientLight(0xffffff, 0.45);
+        scene.add(ambient);
+
+        var dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
+        dirLight.position.set(3, 6, 4);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 512;
+        dirLight.shadow.mapSize.height = 512;
+        scene.add(dirLight);
+
+        var pointLight = new THREE.PointLight(0x4a9eff, 0.3, 10);
+        pointLight.position.set(0, 3, 0);
+        scene.add(pointLight);
+
+        // Ground plane
+        var groundGeo = new THREE.PlaneGeometry(12, 12);
+        var groundMat = new THREE.MeshStandardMaterial({ color: 0xf0f0f0, roughness: 0.95 });
+        var ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // Dock platform (raised bay)
+        var platGeo = new THREE.BoxGeometry(5, 0.2, 3.5);
+        var platMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.6, metalness: 0.4 });
+        dockPlatform = new THREE.Mesh(platGeo, platMat);
+        dockPlatform.position.set(0, 0.1, 0);
+        dockPlatform.castShadow = true;
+        dockPlatform.receiveShadow = true;
+        scene.add(dockPlatform);
+
+        // Dock edge markers (yellow safety strips)
+        var stripGeo = new THREE.BoxGeometry(5, 0.02, 0.08);
+        var stripMat = new THREE.MeshStandardMaterial({ color: 0xf5a623, roughness: 0.5 });
+        [-1.7, 1.7].forEach(function(z) {
+            var strip = new THREE.Mesh(stripGeo, stripMat);
+            strip.position.set(0, 0.21, z);
+            scene.add(strip);
+        });
+
+        // Pallet/crate — starts off-screen to the right
+        var crateGeo = new THREE.BoxGeometry(1.4, 0.8, 1.0);
+        var crateMat = new THREE.MeshStandardMaterial({ color: 0x8B7355, roughness: 0.7, metalness: 0.1 });
+        pallet = new THREE.Mesh(crateGeo, crateMat);
+        pallet.position.set(5, 0.6, 0);
+        pallet.castShadow = true;
+        pallet.receiveShadow = true;
+        scene.add(pallet);
+
+        // Metal sheet on top of pallet
+        var sheetGeo = new THREE.BoxGeometry(1.3, 0.06, 0.9);
+        var sheetMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.3, metalness: 0.8 });
+        var sheet = new THREE.Mesh(sheetGeo, sheetMat);
+        sheet.position.set(0, 0.43, 0);
+        sheet.castShadow = true;
+        pallet.add(sheet);
+
+        // Scanning beam (vertical plane, emissive cyan)
+        var beamGeo = new THREE.PlaneGeometry(0.04, 1.6);
+        var beamMat = new THREE.MeshBasicMaterial({
+            color: 0x4a9eff, transparent: true, opacity: 0.9,
+            side: THREE.DoubleSide
+        });
+        scanBeam = new THREE.Mesh(beamGeo, beamMat);
+        scanBeam.position.set(-2, 1.0, 0);
+        scanBeam.visible = false;
+        scene.add(scanBeam);
+
+        // Scan glow (wider, softer plane behind beam)
+        var glowGeo = new THREE.PlaneGeometry(0.5, 1.8);
+        var glowMat = new THREE.MeshBasicMaterial({
+            color: 0x4a9eff, transparent: true, opacity: 0.12,
+            side: THREE.DoubleSide
+        });
+        scanGlow = new THREE.Mesh(glowGeo, glowMat);
+        scanGlow.position.set(-2, 1.0, 0);
+        scanGlow.visible = false;
+        scene.add(scanGlow);
+
+        startTime = performance.now();
+        animate();
+    }
+
+    function animate() {
+        animId = requestAnimationFrame(animate);
+        if (!renderer || !scene || !camera) return;
+
+        var elapsed = (performance.now() - startTime) / 1000;
+
+        // Phase 1 (0-2.5s): Pallet slides in from x=5 to x=0
+        if (elapsed < 2.5) {
+            var t = Math.min(elapsed / 2.5, 1);
+            var eased = 1 - Math.pow(1 - t, 3); // ease-out
+            pallet.position.x = 5 - 5 * eased;
+        } else {
+            pallet.position.x = 0;
+        }
+
+        // Phase 2 (2.2s+): Scanning beam sweeps
+        if (elapsed > 2.2) {
+            scanBeam.visible = true;
+            scanGlow.visible = true;
+            var scanTime = elapsed - 2.2;
+            // Oscillate beam across pallet
+            var beamX = Math.sin(scanTime * 2.5) * 1.2;
+            scanBeam.position.x = beamX;
+            scanGlow.position.x = beamX;
+            // Pulse beam opacity
+            scanBeam.material.opacity = 0.7 + Math.sin(scanTime * 8) * 0.3;
+            scanGlow.material.opacity = 0.08 + Math.sin(scanTime * 4) * 0.06;
+        }
+
+        // Camera orbit slowly
+        var camRadius = 4;
+        var camAngle = 0.4 + elapsed * 0.08;
+        camera.position.x = camRadius * Math.cos(camAngle);
+        camera.position.z = camRadius * Math.sin(camAngle);
+        camera.position.y = 2.2 + Math.sin(elapsed * 0.3) * 0.2;
+        camera.lookAt(0, 0.4, 0);
+
+        renderer.render(scene, camera);
+    }
+
+    function dispose() {
+        if (animId) cancelAnimationFrame(animId);
+        animId = null;
+        if (renderer) {
+            if (renderer.domElement && renderer.domElement.parentNode) {
+                renderer.domElement.parentNode.removeChild(renderer.domElement);
+            }
+            renderer.dispose();
+        }
+        if (scene) {
+            scene.traverse(function(obj) {
+                if (obj.geometry) obj.geometry.dispose();
+                if (obj.material) {
+                    if (Array.isArray(obj.material)) {
+                        obj.material.forEach(function(m) { m.dispose(); });
+                    } else {
+                        obj.material.dispose();
+                    }
+                }
+            });
+        }
+        scene = null;
+        camera = null;
+        renderer = null;
+        pallet = null;
+        scanBeam = null;
+        scanGlow = null;
+    }
+
+    return { init: init, dispose: dispose };
+})();
+
+// =============================================
+// Dock Card — Inline Shipment Queue System
+// =============================================
+var NUM_DOCKS = {{ current_warehouse.num_docks|default:"3" }};
+var docks = {};
+for (var _i = 1; _i <= NUM_DOCKS; _i++) docks[_i] = null;
+var shipmentQueue = [];
+var activeDock = 1;
+var shipmentIdCounter = 0;
+
+function getCsrfToken() {
+    var el = document.querySelector('[name=csrfmiddlewaretoken]');
+    return el ? el.value : '';
+}
+
+function switchWarehouse(warehouseId) {
+    fetch('/api/set-warehouse/', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken()},
+        body: JSON.stringify({warehouse_id: parseInt(warehouseId)})
+    }).then(function() { window.location.reload(); });
+}
+
+// Show/hide dock card
+function showDockCard() {
+    var card = document.getElementById('dockCard');
+    if (card) card.style.display = '';
+}
+
+function hideDockCard() {
+    var card = document.getElementById('dockCard');
+    if (card) card.style.display = 'none';
+}
+
+function toggleDockCard() {
+    var card = document.getElementById('dockCard');
+    if (card) card.style.display = card.style.display === 'none' ? '' : 'none';
+}
+
+// =============================================
+// N key → New Shipment
+// =============================================
+function triggerNewShipment() {
+    shipmentIdCounter++;
+    var shipment = {
+        id: shipmentIdCounter,
+        step: 0,
+        pallets: [],
+        dockId: null,
+        status: 'scanning'
+    };
+
+    // Find first empty dock
+    var assignedDock = null;
+    for (var d = 1; d <= NUM_DOCKS; d++) {
+        if (!docks[d]) {
+            assignedDock = d;
+            break;
+        }
+    }
+
+    if (assignedDock) {
+        shipment.dockId = assignedDock;
+        docks[assignedDock] = shipment;
+        startScanning(shipment);
+        switchDock(assignedDock);
+        blinkDockTab(assignedDock);
+    } else {
+        // All docks busy — queue it
+        shipmentQueue.push(shipment);
+        renderQueue();
+    }
+}
+
+// =============================================
+// Dock Tabs
+// =============================================
+function switchDock(dockId) {
+    activeDock = dockId;
+
+    // Update tab active state
+    var tabs = document.querySelectorAll('.dock-tab');
+    tabs.forEach(function(tab) {
+        var d = parseInt(tab.dataset.dock, 10);
+        tab.classList.toggle('active', d === dockId);
+    });
+
+    renderDockContent();
+}
+
+function blinkDockTab(dockId) {
+    var tab = document.querySelector('.dock-tab[data-dock="' + dockId + '"]');
+    if (!tab) return;
+    tab.classList.add('dock-tab--arriving');
+    setTimeout(function() {
+        tab.classList.remove('dock-tab--arriving');
+    }, 3000);
+}
+
+function updateDockTabStates() {
+    for (var d = 1; d <= NUM_DOCKS; d++) {
+        var tab = document.querySelector('.dock-tab[data-dock="' + d + '"]');
+        if (!tab) continue;
+        tab.classList.toggle('dock-tab--occupied', !!docks[d]);
+    }
+}
+
+// =============================================
+// Render Current Dock Content
+// =============================================
+function renderDockContent() {
+    var shipment = docks[activeDock];
+    var emptyState = document.getElementById('dockEmptyState');
+    var nav = document.getElementById('dockNav');
+
+    // Hide all steps and empty state
+    for (var i = 0; i < 4; i++) {
+        var stepEl = document.getElementById('dockStep' + i);
+        if (stepEl) stepEl.style.display = 'none';
+    }
+    emptyState.style.display = 'none';
+
+    if (!shipment) {
+        emptyState.style.display = 'flex';
+        nav.style.display = 'none';
+        return;
+    }
+
+    var step = shipment.step;
+
+    // Show current step
+    var activeStep = document.getElementById('dockStep' + step);
+    if (activeStep) activeStep.style.display = 'block';
+
+    // Nav visibility
+    if (step === 0) {
+        nav.style.display = 'none';
+    } else {
+        nav.style.display = 'flex';
+        var backBtn = document.getElementById('dockBackBtn');
+        var nextBtn = document.getElementById('dockNextBtn');
+        backBtn.style.display = step <= 1 ? 'none' : 'inline-flex';
+        nextBtn.textContent = step === 3 ? 'Place Shipment' : 'Next';
+        nextBtn.disabled = false;
+    }
+
+    // Update step dots
+    var dots = document.querySelectorAll('.dock-dot');
+    dots.forEach(function(dot) {
+        var s = parseInt(dot.dataset.step, 10);
+        dot.classList.toggle('active', s <= step);
+        dot.classList.toggle('current', s === step);
+    });
+
+    // Render step content
+    if (step === 1) renderStep1(shipment);
+    if (step === 2) renderStep2(shipment);
+    if (step === 3) renderStep3(shipment);
+}
+
+// =============================================
+// Step 0: Scanning Animation
+// =============================================
+function startScanning(shipment) {
+    var titleEl = document.getElementById('dockScanTitle');
+    var subEl = document.getElementById('dockScanSubtitle');
+    if (titleEl) titleEl.textContent = 'Scanning dock area...';
+    if (subEl) subEl.textContent = 'Detecting incoming shipment';
+
+    // Init 3D dock scan animation
+    if (activeDock === shipment.dockId) {
+        // Ensure step 0 is visible before initializing 3D
+        var step0 = document.getElementById('dockStep0');
+        if (step0) step0.style.display = 'block';
+
+        setTimeout(function() {
+            var container = document.getElementById('dockScan3DContainer');
+            if (container && container.isConnected && container.clientWidth > 0) {
+                DockScanScene.init(container);
+            }
+        }, 150);
+    }
+
+    // Generate 2-4 random pallets
+    var count = 2 + Math.floor(Math.random() * 3);
+    var promises = [];
+    for (var i = 0; i < count; i++) {
+        promises.push(fetch('/api/generate-delivery/').then(function(r) { return r.json(); }));
+    }
+
+    setTimeout(function() {
+        if (titleEl) titleEl.textContent = 'Shipment Detected!';
+        if (subEl) subEl.textContent = 'Preparing pallet details...';
+    }, 2500);
+
+    Promise.all(promises).then(function(results) {
+        shipment.pallets = results;
+        setTimeout(function() {
+            DockScanScene.dispose();
+            shipment.step = 1;
+            shipment.status = 'detected';
+            if (activeDock === shipment.dockId) renderDockContent();
+            updateDockTabStates();
+        }, 5000);
+    });
+}
+
+// =============================================
+// Step 1: Show Detected Pallets
+// =============================================
+function renderStep1(shipment) {
+    var container = document.getElementById('dockPallets');
+    container.innerHTML = '';
+    shipment.pallets.forEach(function(p, i) {
+        container.innerHTML +=
+            '<div class="dock-pallet-card glass-subtle">' +
+            '<div class="dock-pallet-header">Pallet ' + (i + 1) + '</div>' +
+            '<div class="dock-pallet-grid">' +
+            '<div class="dock-pallet-detail"><span class="dock-pallet-label">Manufacturer</span><span class="dock-pallet-value">' + p.manufacturer + '</span></div>' +
+            '<div class="dock-pallet-detail"><span class="dock-pallet-label">Size</span><span class="dock-pallet-value">' + p.size + '</span></div>' +
+            '<div class="dock-pallet-detail"><span class="dock-pallet-label">Batch</span><span class="dock-pallet-value">' + p.batch_id + '</span></div>' +
+            '<div class="dock-pallet-detail"><span class="dock-pallet-label">Quantity</span><span class="dock-pallet-value">' + p.quantity + '</span></div>' +
+            '<div class="dock-pallet-detail"><span class="dock-pallet-label">Material</span><span class="dock-pallet-value">' + (p.material_name || '\u2014') + '</span></div>' +
+            '</div></div>';
+    });
+}
+
+// =============================================
+// Step 2: Assign Shelf Locations
+// =============================================
+function renderStep2(shipment) {
+    var container = document.getElementById('dockAssign');
+    container.innerHTML = '';
+    shipment.pallets.forEach(function(p, i) {
+        container.innerHTML +=
+            '<div class="dock-pallet-card glass-subtle">' +
+            '<div class="dock-pallet-header">Pallet ' + (i + 1) + ' — ' + p.manufacturer + '</div>' +
+            '<div class="dock-assign-row">' +
+            '<span class="dock-pallet-label">' + p.size + ' · ' + p.quantity + '</span>' +
+            '<input type="text" class="dock-shelf-input" id="dockShelf_' + shipment.dockId + '_' + i + '" value="' + p.shelf_id + '" placeholder="e.g. 3-B-2">' +
+            '</div></div>';
+    });
+}
+
+// =============================================
+// Step 3: Confirm Summary
+// =============================================
+function renderStep3(shipment) {
+    // Save edited shelf values
+    shipment.pallets.forEach(function(p, i) {
+        var input = document.getElementById('dockShelf_' + shipment.dockId + '_' + i);
+        if (input) p.shelf_id = input.value;
+    });
+
+    var container = document.getElementById('dockSummary');
+    var html = '<table class="data-table dock-summary-table"><thead><tr><th>#</th><th>Manufacturer</th><th>Size</th><th>Qty</th><th>Shelf</th></tr></thead><tbody>';
+    shipment.pallets.forEach(function(p, i) {
+        html += '<tr><td>' + (i + 1) + '</td><td>' + p.manufacturer + '</td><td class="cell-mono">' + p.size + '</td><td>' + p.quantity + '</td><td class="cell-mono">' + p.shelf_id + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+// =============================================
+// Nav: Back / Next / Place
+// =============================================
+function dockBack() {
+    var shipment = docks[activeDock];
+    if (!shipment || shipment.step <= 1) return;
+    shipment.step--;
+    renderDockContent();
+}
+
+function dockNext() {
+    var shipment = docks[activeDock];
+    if (!shipment) return;
+
+    if (shipment.step === 1) {
+        shipment.step = 2;
+        renderDockContent();
+    } else if (shipment.step === 2) {
+        // Save shelf values before advancing
+        shipment.pallets.forEach(function(p, i) {
+            var input = document.getElementById('dockShelf_' + shipment.dockId + '_' + i);
+            if (input) p.shelf_id = input.value;
+        });
+        shipment.step = 3;
+        renderDockContent();
+    } else if (shipment.step === 3) {
+        placeShipment(shipment);
+    }
+}
+
+function placeShipment(shipment) {
+    var csrfToken = getCsrfToken();
+    var btn = document.getElementById('dockNextBtn');
+    btn.disabled = true;
+    btn.textContent = 'Placing...';
+
+    var promises = shipment.pallets.map(function(p) {
+        return fetch('/api/add-delivery/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+            body: JSON.stringify({
+                manufacturer: p.manufacturer,
+                date: p.date,
+                size: p.size,
+                batch_id: p.batch_id,
+                quantity: p.quantity,
+                shelf_id: p.shelf_id,
+                material_id: p.material_id
+            })
+        }).then(function(r) { return r.json(); });
+    });
+
+    Promise.all(promises).then(function(results) {
+        var tbody = document.querySelector('#deliveryTable tbody');
+        results.forEach(function(data) {
+            if (data.error) return;
+            var tr = document.createElement('tr');
+            tr.dataset.shelf = data.shelf_id;
+            tr.dataset.deliveryId = data.id;
+            tr.classList.add('row-new');
+            tr.innerHTML =
+                '<td><input type="checkbox" class="row-checkbox" value="' + data.id + '" onchange="updateBulkActions()"></td>' +
+                '<td class="cell-id">#' + data.id + '</td>' +
+                '<td class="cell-name">' + data.manufacturer + '</td>' +
+                '<td>' + data.created_at + '</td>' +
+                '<td class="cell-mono">' + data.size + '</td>' +
+                '<td class="cell-mono">' + data.batch_id + '</td>' +
+                '<td>' + data.quantity + '</td>' +
+                '<td class="cell-mono">' + data.shelf_id + '</td>' +
+                '<td><span class="status-badge shipment-status not-placed">Not Placed</span></td>' +
+                '<td><span class="status-badge shelf-status shelf-open-badge">Open</span></td>' +
+                '<td><button class="btn-arrived" onclick="Shelf3D.open(\'' + data.shelf_id + '\')">Arrived</button><button class="btn-delete-delivery" onclick="showDeleteModal(' + data.id + ')">Delete</button></td>';
+            tbody.insertBefore(tr, tbody.firstChild);
+            // Remove highlight after 3s
+            setTimeout(function() { tr.classList.remove('row-new'); }, 3000);
+        });
+
+        // Refresh table stats and badges
+        refreshTable();
+
+        // Clear dock and promote from queue
+        var dockId = shipment.dockId;
+        docks[dockId] = null;
+        promoteFromQueue(dockId);
+        updateDockTabStates();
+        renderDockContent();
+
+        btn.disabled = false;
+        btn.textContent = 'Place Shipment';
+    });
+}
+
+// =============================================
+// Queue Management
+// =============================================
+function renderQueue() {
+    var list = document.getElementById('queueList');
+    var badge = document.getElementById('queueBadge');
+    var empty = document.getElementById('queueEmpty');
+
+    badge.textContent = shipmentQueue.length;
+
+    // Update the stats row queue count
+    var queueStat = document.getElementById('queueCountStat');
+    if (queueStat) queueStat.textContent = shipmentQueue.length;
+
+    if (shipmentQueue.length === 0) {
+        empty.style.display = '';
+        // Clear any queue item elements
+        var items = list.querySelectorAll('.dock-queue-item');
+        items.forEach(function(el) { el.remove(); });
+        return;
+    }
+
+    empty.style.display = 'none';
+    // Clear old items
+    var oldItems = list.querySelectorAll('.dock-queue-item');
+    oldItems.forEach(function(el) { el.remove(); });
+
+    shipmentQueue.forEach(function(s, i) {
+        var item = document.createElement('div');
+        item.className = 'dock-queue-item glass-subtle';
+        item.innerHTML =
+            '<div class="dock-queue-item-title">Shipment #' + s.id + '</div>' +
+            '<div class="dock-queue-item-info">' + (s.pallets.length || '?') + ' pallets</div>';
+        item.onclick = function() { promoteQueueItem(i); };
+        list.appendChild(item);
+    });
+}
+
+function promoteFromQueue(freeDockId) {
+    if (shipmentQueue.length === 0) return;
+    var shipment = shipmentQueue.shift();
+    shipment.dockId = freeDockId;
+    shipment.step = 0;
+    shipment.status = 'scanning';
+    docks[freeDockId] = shipment;
+    blinkDockTab(freeDockId);
+    startScanning(shipment);
+    renderQueue();
+}
+
+function promoteQueueItem(queueIndex) {
+    // Find a free dock
+    var freeDock = null;
+    for (var d = 1; d <= NUM_DOCKS; d++) {
+        if (!docks[d]) { freeDock = d; break; }
+    }
+    if (!freeDock) return; // No free dock
+
+    var shipment = shipmentQueue.splice(queueIndex, 1)[0];
+    shipment.dockId = freeDock;
+    shipment.step = 0;
+    shipment.status = 'scanning';
+    docks[freeDock] = shipment;
+    blinkDockTab(freeDock);
+    switchDock(freeDock);
+    startScanning(shipment);
+    renderQueue();
+    updateDockTabStates();
+}
+
+function hasAnyActivity() {
+    if (shipmentQueue.length > 0) return true;
+    for (var d = 1; d <= NUM_DOCKS; d++) {
+        if (docks[d]) return true;
+    }
+    return false;
+}
+
+// =============================================
+// Table Filtering & Sorting
+// =============================================
+var sortState = { field: null, asc: true };
+
+function filterByDelivery() {
+    var query = document.getElementById('filterDeliveryNum').value.toLowerCase().replace('#', '');
+    var rows = document.querySelectorAll('#deliveryTable tbody tr');
+    rows.forEach(function(row) {
+        var idCell = row.querySelector('.cell-id');
+        if (!idCell) return;
+        var id = idCell.textContent.replace('#', '').trim();
+        row.style.display = (!query || id.indexOf(query) !== -1) ? '' : 'none';
+    });
+}
+
+function toggleSort(field) {
+    if (sortState.field === field) {
+        sortState.asc = !sortState.asc;
+    } else {
+        sortState.field = field;
+        sortState.asc = true;
+    }
+
+    // Reset all arrows
+    ['Date', 'Qty'].forEach(function(name) {
+        var el = document.getElementById('arrow' + name);
+        if (el) el.textContent = '↕';
+    });
+
+    // Set active arrow
+    var arrowMap = { date: 'arrowDate', quantity: 'arrowQty' };
+    var arrowEl = document.getElementById(arrowMap[field]);
+    if (arrowEl) arrowEl.textContent = sortState.asc ? '↑' : '↓';
+
+    var tbody = document.querySelector('#deliveryTable tbody');
+    var rows = Array.from(tbody.querySelectorAll('tr'));
+
+    rows.sort(function(a, b) {
+        var valA, valB;
+        var cellsA = a.querySelectorAll('td');
+        var cellsB = b.querySelectorAll('td');
+
+        if (field === 'date') {
+            valA = cellsA[3] ? new Date(cellsA[3].textContent.trim()) : new Date(0);
+            valB = cellsB[3] ? new Date(cellsB[3].textContent.trim()) : new Date(0);
+            return sortState.asc ? valA - valB : valB - valA;
+        } else if (field === 'quantity') {
+            valA = parseInt(cellsA[6] ? cellsA[6].textContent.trim() : '0', 10) || 0;
+            valB = parseInt(cellsB[6] ? cellsB[6].textContent.trim() : '0', 10) || 0;
+            return sortState.asc ? valA - valB : valB - valA;
+        }
+        return 0;
+    });
+
+    rows.forEach(function(row) { tbody.appendChild(row); });
+}
+
+
+// =============================================
+// Warehouse Map
+// =============================================
+function openWarehouseMap() {
+    var overlay = document.getElementById('mapModalOverlay');
+    if (!overlay) return;
+    overlay.classList.add('active');
+    document.body.style.overflow = 'hidden';
+    loadMapData();
+}
+
+function closeWarehouseMap() {
+    var overlay = document.getElementById('mapModalOverlay');
+    if (overlay) overlay.classList.remove('active');
+    document.body.style.overflow = '';
+}
+
+var cachedMapSectors = null;
+var cachedMapLayout = null;
+
+function loadMapData() {
+    var grid = document.getElementById('mapGrid');
+    grid.innerHTML = '<div class="map-loading">Loading warehouse data...</div>';
+
+    fetch('/api/warehouse-map/')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            cachedMapSectors = data.sectors;
+            cachedMapLayout = data.layout;
+            // Populate sector dropdown dynamically
+            var sel = document.getElementById('mapStartSector');
+            if (sel) {
+                sel.innerHTML = '<option value="">Auto</option>';
+                var sKeys = Object.keys(data.sectors).sort(function(a,b){ return parseInt(a)-parseInt(b); });
+                sKeys.forEach(function(s) {
+                    sel.innerHTML += '<option value="' + s + '">Sector ' + s + '</option>';
+                });
+            }
+            if (data.layout && data.layout.cells && data.layout.cells.length > 0) {
+                renderDynamicMap(data.layout);
+            } else {
+                renderMap(data.sectors);
+            }
+        })
+        .catch(function() {
+            grid.innerHTML = '<div class="map-loading">Failed to load map data</div>';
+        });
+}
+
+function renderDynamicMap(layout) {
+    var grid = document.getElementById('mapGrid');
+    var gridRows = layout.grid_rows;
+    var gridCols = layout.grid_cols;
+    var cells = layout.cells;
+
+    // Build a lookup map
+    var cellMap = {};
+    cells.forEach(function(c) { cellMap[c.row + ',' + c.col] = c; });
+
+    var html = '<div class="dynamic-map-grid" style="grid-template-columns:repeat(' + gridCols + ',1fr)">';
+    html += '<div class="dynamic-map-dims">' + layout.width_m + 'm x ' + layout.length_m + 'm, ' + layout.height_m + 'm tall</div>';
+
+    for (var r = 0; r < gridRows; r++) {
+        for (var c = 0; c < gridCols; c++) {
+            var cell = cellMap[r + ',' + c] || { cell_type: 'empty' };
+            var cls = 'dmap-cell dmap-' + cell.cell_type;
+            var attrs = '';
+            var inner = '';
+
+            if (cell.cell_type === 'storage' && cell.sector != null && cell.unit) {
+                var statusCls = cell.status ? ' dmap-occ-' + cell.status : '';
+                cls += statusCls;
+                var shelfId = cell.sector + '-' + cell.unit + '-1';
+                attrs = ' onclick="closeWarehouseMap(); Shelf3D.open(\'' + shelfId + '\')" title="' + cell.label + ': ' + (cell.occupied||0) + '/' + (cell.total||0) + '"';
+                inner = '<span class="dmap-label">' + (cell.label || '') + '</span>';
+            } else if (cell.cell_type === 'wall') {
+                attrs = ' title="Wall"';
+            } else if (cell.cell_type === 'dock') {
+                inner = '<span class="dmap-label">D</span>';
+                attrs = ' title="Loading Dock"';
+            }
+
+            html += '<div class="' + cls + '"' + attrs + '>' + inner + '</div>';
+        }
+    }
+
+    html += '</div>';
+    grid.innerHTML = html;
+}
+
+function renderMap(sectors) {
+    var grid = document.getElementById('mapGrid');
+    var html = '';
+    var sectorKeys = Object.keys(sectors).sort(function(a,b){ return parseInt(a) - parseInt(b); });
+
+    for (var si = 0; si < sectorKeys.length; si++) {
+        var s = sectorKeys[si];
+        var sectorData = sectors[s];
+        var unitKeys = Object.keys(sectorData).sort();
+        html += '<div class="map-sector">';
+        html += '<div class="map-sector-label">Sector ' + s + '</div>';
+        html += '<div class="map-sector-units">';
+
+        for (var ui = 0; ui < unitKeys.length; ui++) {
+            var u = unitKeys[ui];
+            var unitData = sectorData[u];
+            var shelfKeys = Object.keys(unitData).sort(function(a,b){ return parseInt(a) - parseInt(b); });
+            html += '<div class="map-unit">';
+            html += '<div class="map-unit-label">Unit ' + u + '</div>';
+            html += '<div class="map-shelves">';
+
+            for (var shi = 0; shi < shelfKeys.length; shi++) {
+                var sh = shelfKeys[shi];
+                var shelf = unitData[sh];
+                var statusClass = 'map-shelf-' + shelf.status;
+                var tooltip = s + '-' + u + '-' + sh + ': ' + shelf.occupied + '/' + shelf.total;
+                html += '<div class="map-shelf ' + statusClass + '" title="' + tooltip + '" onclick="closeWarehouseMap(); Shelf3D.open(\'' + s + '-' + u + '-' + sh + '\')">';
+                html += '<span class="map-shelf-num">' + sh + '</span>';
+                html += '</div>';
+            }
+
+            html += '</div></div>';
+        }
+
+        html += '</div></div>';
+    }
+
+    grid.innerHTML = html;
+}
+
+// =============================================
+// Warehouse Map — Route Optimization (Nearest-Neighbor TSP)
+// =============================================
+function calcOptimalRoute() {
+    if (!cachedMapSectors) return;
+
+    var startSelect = document.getElementById('mapStartSector');
+    var startSector = startSelect ? parseInt(startSelect.value, 10) : 1;
+    if (isNaN(startSector) || startSector < 1) startSector = 1;
+
+    // Store for Navigate button to use
+    window._mapStartSector = startSector;
+    localStorage.setItem('mapStartSector', String(startSector));
+
+    var sectorKeys = Object.keys(cachedMapSectors).sort(function(a,b){ return parseInt(a)-parseInt(b); });
+    var targets = [];
+
+    // Collect all shelves needing stocking (partial status) with occupancy info
+    for (var si = 0; si < sectorKeys.length; si++) {
+        var s = sectorKeys[si];
+        var sectorData = cachedMapSectors[s];
+        if (!sectorData) continue;
+        var unitKeys = Object.keys(sectorData).sort();
+        for (var ui = 0; ui < unitKeys.length; ui++) {
+            var u = unitKeys[ui];
+            var unitData = sectorData[u];
+            if (!unitData) continue;
+            var shelfKeys = Object.keys(unitData).sort(function(a,b){ return parseInt(a)-parseInt(b); });
+            for (var shi = 0; shi < shelfKeys.length; shi++) {
+                var sh = shelfKeys[shi];
+                var shelf = unitData[sh];
+                if (shelf && shelf.status === 'partial') {
+                    targets.push({
+                        sector: parseInt(s), unit: u, unitIdx: ui, shelf: parseInt(sh),
+                        shelfId: s + '-' + u + '-' + sh,
+                        occupied: shelf.occupied,
+                        free: shelf.total - shelf.occupied
+                    });
+                }
+            }
+        }
+    }
+
+    if (targets.length === 0) return;
+
+    // Group by sector-unit, then sort shelves within each group by occupancy (most full first)
+    var groups = {};
+    targets.forEach(function(t) {
+        var key = t.sector + '-' + t.unit;
+        if (!groups[key]) groups[key] = { sector: t.sector, unitIdx: t.unitIdx, shelves: [] };
+        groups[key].shelves.push(t);
+    });
+
+    // Sort shelves within each group: most occupied first (fill them up first)
+    Object.keys(groups).forEach(function(key) {
+        groups[key].shelves.sort(function(a, b) { return b.occupied - a.occupied; });
+    });
+
+    // Linear sweep: go to nearest end first, then sweep to the other end
+    // e.g. from sector 6: go 6→7 (nearest end), then 5→4→3→2→1
+    var allGroups = Object.keys(groups).map(function(k) { return groups[k]; });
+
+    // Sort all groups by sector then unit for deterministic ordering
+    allGroups.sort(function(a, b) {
+        if (a.sector !== b.sector) return a.sector - b.sector;
+        return a.unitIdx - b.unitIdx;
+    });
+
+    // Find min and max sectors that have targets
+    var minSector = Infinity, maxSector = -Infinity;
+    allGroups.forEach(function(g) {
+        if (g.sector < minSector) minSector = g.sector;
+        if (g.sector > maxSector) maxSector = g.sector;
+    });
+
+    // Decide direction: go to whichever end is closer first
+    var distToMax = maxSector - startSector;  // distance to high end
+    var distToMin = startSector - minSector;  // distance to low end
+
+    var visited = [];
+    var goHighFirst = distToMax <= distToMin;
+
+    if (goHighFirst) {
+        // Go from startSector upward to max, then from startSector-1 downward to min
+        // Phase 1: sectors >= startSector, ascending (with units A→D)
+        allGroups.filter(function(g) { return g.sector >= startSector; })
+            .forEach(function(g) { g.shelves.forEach(function(s) { visited.push(s); }); });
+        // Phase 2: sectors < startSector, descending
+        allGroups.filter(function(g) { return g.sector < startSector; })
+            .sort(function(a, b) {
+                if (a.sector !== b.sector) return b.sector - a.sector;
+                return a.unitIdx - b.unitIdx;
+            })
+            .forEach(function(g) { g.shelves.forEach(function(s) { visited.push(s); }); });
+    } else {
+        // Go from startSector downward to min, then from startSector+1 upward to max
+        // Phase 1: sectors <= startSector, descending
+        allGroups.filter(function(g) { return g.sector <= startSector; })
+            .sort(function(a, b) {
+                if (a.sector !== b.sector) return b.sector - a.sector;
+                return a.unitIdx - b.unitIdx;
+            })
+            .forEach(function(g) { g.shelves.forEach(function(s) { visited.push(s); }); });
+        // Phase 2: sectors > startSector, ascending
+        allGroups.filter(function(g) { return g.sector > startSector; })
+            .forEach(function(g) { g.shelves.forEach(function(s) { visited.push(s); }); });
+    }
+
+    renderRoute(visited);
+}
+
+function renderRoute(route) {
+    // Clear previous route badges
+    var oldBadges = document.querySelectorAll('.map-route-badge');
+    oldBadges.forEach(function(el) { el.remove(); });
+    var oldRouted = document.querySelectorAll('.map-shelf-routed');
+    oldRouted.forEach(function(el) { el.classList.remove('map-shelf-routed'); });
+
+    // Add numbered badges to shelves in route order
+    route.forEach(function(stop, idx) {
+        var shelfEls = document.querySelectorAll('.map-shelf');
+        shelfEls.forEach(function(el) {
+            if (el.getAttribute('title') && el.getAttribute('title').indexOf(stop.shelfId + ':') === 0) {
+                el.classList.add('map-shelf-routed');
+                var badge = document.createElement('span');
+                badge.className = 'map-route-badge';
+                badge.textContent = idx + 1;
+                el.appendChild(badge);
+            }
+        });
+    });
+}
+
+// =============================================
+// Navigate — Optimal Route + Row Reordering
+// =============================================
+function navigateRoute() {
+    var tbody = document.querySelector('#deliveryTable tbody');
+    if (!tbody) return;
+
+    var rows = Array.from(tbody.querySelectorAll('tr'));
+    if (rows.length === 0) return;
+
+    // Get starting sector: check localStorage first, then dropdown, default to 1
+    var startSector = 1;
+    var saved = localStorage.getItem('mapStartSector');
+    if (saved && parseInt(saved, 10) >= 1) {
+        startSector = parseInt(saved, 10);
+    }
+    var sel = document.getElementById('mapStartSector');
+    if (sel && sel.value && parseInt(sel.value, 10) >= 1) {
+        startSector = parseInt(sel.value, 10);
+    }
+    if (window._mapStartSector && window._mapStartSector >= 1) {
+        startSector = window._mapStartSector;
+    }
+
+    // Parse each row's shelf and status
+    // Use endpoint-first ordering: go to nearest end, then sweep back
+    var allSectors = [];
+    rows.forEach(function(row) {
+        var shelfId = row.dataset.shelf || '';
+        var parts = shelfId.split('-');
+        var sector = parts[0] ? parseInt(parts[0], 10) : 99;
+        if (sector <= 7 && allSectors.indexOf(sector) === -1) allSectors.push(sector);
+    });
+    var minS = Math.min.apply(null, allSectors.length ? allSectors : [1]);
+    var maxS = Math.max.apply(null, allSectors.length ? allSectors : [7]);
+    var goHighFirst = (maxS - startSector) <= (startSector - minS);
+
+    rows.forEach(function(row) {
+        var shelfId = row.dataset.shelf || '';
+        var statusBadge = row.querySelector('.shipment-status');
+        var status = statusBadge ? statusBadge.textContent.trim().toLowerCase() : '';
+        var parts = shelfId.split('-');
+        var sector = parts[0] ? parseInt(parts[0], 10) : 99;
+        var unitVal = parts[1] ? parts[1].charCodeAt(0) - 64 : 99;
+        var shelfNum = parts[2] ? parseInt(parts[2], 10) : 99;
+
+        // Priority: not-placed first (0), placed last (2)
+        var priority = (status === 'placed') ? 2 : 0;
+
+        // Phase: 0 = first sweep direction, 1 = second sweep direction
+        var phase, orderInPhase;
+        if (goHighFirst) {
+            if (sector >= startSector) {
+                phase = 0;
+                orderInPhase = (sector - startSector) * 100 + unitVal * 10 + shelfNum;
+            } else {
+                phase = 1;
+                orderInPhase = (startSector - sector) * 100 + unitVal * 10 + shelfNum;
+            }
+        } else {
+            if (sector <= startSector) {
+                phase = 0;
+                orderInPhase = (startSector - sector) * 100 + unitVal * 10 + shelfNum;
+            } else {
+                phase = 1;
+                orderInPhase = (sector - startSector) * 100 + unitVal * 10 + shelfNum;
+            }
+        }
+
+        row._sortData = { priority: priority, phase: phase, orderInPhase: orderInPhase };
+    });
+
+    // Sort: not-placed first, then by phase (first sweep, second sweep), then by position
+    rows.sort(function(a, b) {
+        var da = a._sortData, db = b._sortData;
+        if (da.priority !== db.priority) return da.priority - db.priority;
+        if (da.phase !== db.phase) return da.phase - db.phase;
+        return da.orderInPhase - db.orderInPhase;
+    });
+
+    // Re-append sorted rows
+    rows.forEach(function(row) {
+        tbody.appendChild(row);
+    });
+
+    // Flash the Navigate button
+    var btn = document.querySelector('.btn-toolbar-action[onclick="navigateRoute()"]');
+    if (btn) {
+        btn.classList.add('btn-active-route');
+        setTimeout(function() { btn.classList.remove('btn-active-route'); }, 2000);
+    }
+}
+
+// =============================================
+// Refresh + Auto-Poll
+// =============================================
+function refreshTable() {
+    fetch('/api/delivery-statuses/')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var rows = document.querySelectorAll('#deliveryTable tbody tr');
+            rows.forEach(function(row) {
+                var deliveryId = row.dataset.deliveryId;
+                if (!deliveryId || !data.deliveries[deliveryId]) return;
+                var d = data.deliveries[deliveryId];
+                // Update shipment status badge
+                var shipmentBadge = row.querySelector('.shipment-status');
+                if (shipmentBadge) {
+                    if (d.status === 'stored') {
+                        shipmentBadge.textContent = 'Placed';
+                        shipmentBadge.className = 'status-badge shipment-status placed';
+                    } else {
+                        shipmentBadge.textContent = 'Not Placed';
+                        shipmentBadge.className = 'status-badge shipment-status not-placed';
+                    }
+                }
+                // Update shelf status badge
+                var shelfBadge = row.querySelector('.shelf-status');
+                if (shelfBadge) {
+                    if (d.shelf_full) {
+                        shelfBadge.textContent = 'Full (' + d.shelf_occupied + '/4)';
+                        shelfBadge.className = 'status-badge shelf-status shelf-full-badge';
+                    } else {
+                        shelfBadge.textContent = 'Open (' + d.shelf_occupied + '/4)';
+                        shelfBadge.className = 'status-badge shelf-status shelf-open-badge';
+                    }
+                }
+            });
+            // Remove rows for hard-deleted deliveries
+            rows.forEach(function(row) {
+                var deliveryId = row.dataset.deliveryId;
+                if (deliveryId && !data.deliveries[deliveryId]) {
+                    row.remove();
+                }
+            });
+            // Update stats cards
+            var pendingStat = document.querySelector('.delivery-stat-card .stat-pending');
+            if (pendingStat) {
+                var val = pendingStat.closest('.delivery-stat-card').querySelector('.delivery-stat-value');
+                if (val) val.textContent = data.pending_count;
+            }
+            var storedStat = document.querySelector('.delivery-stat-card .stat-done');
+            if (storedStat) {
+                var val = storedStat.closest('.delivery-stat-card').querySelector('.delivery-stat-value');
+                if (val) val.textContent = data.stored_count;
+            }
+            // Update toolbar capacity
+            var capEl = document.getElementById('toolbarCapacity');
+            if (capEl) capEl.textContent = data.occupied_slots + ' / ' + data.total_slots + ' Slots';
+        })
+        .catch(function() {}); // Silently ignore network errors
+}
+
+// Auto-poll every second
+setInterval(refreshTable, 1000);
+
+// =============================================
+// Delete Shipment
+// =============================================
+var pendingBulkDeleteIds = [];
+
+function showDeleteModal(deliveryId) {
+    pendingBulkDeleteIds = [];
+    document.getElementById('deleteDeliveryId').value = deliveryId;
+    document.getElementById('deleteReason').value = '';
+    document.getElementById('deleteModalOverlay').classList.add('active');
+}
+function closeDeleteModal() {
+    document.getElementById('deleteModalOverlay').classList.remove('active');
+    pendingBulkDeleteIds = [];
+}
+function confirmDelete() {
+    var reason = document.getElementById('deleteReason').value;
+    var csrfToken = getCsrfToken();
+
+    // Determine which IDs to delete (bulk or single)
+    var ids;
+    if (pendingBulkDeleteIds.length > 0) {
+        ids = pendingBulkDeleteIds;
+    } else {
+        ids = [document.getElementById('deleteDeliveryId').value];
+    }
+
+    var promises = ids.map(function(id) {
+        return fetch('/api/delete-delivery/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+            body: JSON.stringify({ delivery_id: id, delete_reason: reason })
+        }).then(function(r) { return r.json(); });
+    });
+
+    Promise.all(promises).then(function(results) {
+        results.forEach(function(data) {
+            if (data.success) {
+                var row = document.querySelector('tr[data-delivery-id="' + data.id + '"]');
+                if (row) row.remove();
+            }
+        });
+        closeDeleteModal();
+        if (pendingBulkDeleteIds.length > 0) {
+            document.getElementById('selectAllCheckbox').checked = false;
+            updateBulkActions();
+        }
+        pendingBulkDeleteIds = [];
+        refreshTable();
+    });
+}
+
+// =============================================
+// Bulk Select + Bulk Delete
+// =============================================
+function toggleSelectAll(master) {
+    var checkboxes = document.querySelectorAll('.row-checkbox');
+    checkboxes.forEach(function(cb) { cb.checked = master.checked; });
+    updateBulkActions();
+}
+function updateBulkActions() {
+    var checked = document.querySelectorAll('.row-checkbox:checked');
+    var btn = document.getElementById('bulkDeleteBtn');
+    var count = document.getElementById('bulkCount');
+    if (btn) btn.style.display = checked.length > 0 ? 'inline-flex' : 'none';
+    if (count) count.textContent = checked.length;
+}
+function bulkDelete() {
+    var checked = document.querySelectorAll('.row-checkbox:checked');
+    if (checked.length === 0) return;
+    pendingBulkDeleteIds = Array.from(checked).map(function(cb) { return cb.value; });
+    document.getElementById('deleteDeliveryId').value = '';
+    document.getElementById('deleteReason').value = '';
+    document.getElementById('deleteModalOverlay').classList.add('active');
+}
+
+// =============================================
+// Deleted Shipments View
+// =============================================
+function showDeletedShipments() {
+    document.getElementById('deletedModalOverlay').classList.add('active');
+    fetch('/api/deleted-deliveries/').then(function(r) { return r.json(); }).then(function(data) {
+        var container = document.getElementById('deletedListContainer');
+        if (data.deliveries.length === 0) {
+            container.innerHTML = '<p style="color:var(--text-muted);">No deleted shipments.</p>';
+            return;
+        }
+        var html = '<table class="data-table" style="margin:0;"><thead><tr><th>#</th><th>Manufacturer</th><th>Batch</th><th>Qty</th><th>Shelf</th><th>Reason</th></tr></thead><tbody>';
+        data.deliveries.forEach(function(d) {
+            html += '<tr><td class="cell-id">#' + d.id + '</td><td class="cell-name">' + d.manufacturer + '</td><td class="cell-mono">' + d.batch_id + '</td><td>' + d.quantity + '</td><td class="cell-mono">' + d.shelf_id + '</td><td>' + (d.delete_reason || '—') + '</td></tr>';
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    });
+}
+function closeDeletedModal() {
+    document.getElementById('deletedModalOverlay').classList.remove('active');
+}
+
+// =============================================
+// localStorage sector persistence for Navigate
+// =============================================
+document.addEventListener('DOMContentLoaded', function() {
+    var sel = document.getElementById('mapStartSector');
+    if (sel) {
+        var saved = localStorage.getItem('mapStartSector');
+        if (saved) {
+            sel.value = saved;
+            window._mapStartSector = parseInt(saved, 10) || 1;
+        }
+        sel.addEventListener('change', function() {
+            var val = parseInt(sel.value, 10);
+            if (!isNaN(val) && val >= 1) {
+                window._mapStartSector = val;
+                localStorage.setItem('mapStartSector', String(val));
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

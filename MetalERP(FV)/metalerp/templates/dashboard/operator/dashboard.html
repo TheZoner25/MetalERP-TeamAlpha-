@@ -1,0 +1,72 @@
+{% extends "base_operator.html" %}
+{% load static %}
+
+{% block title %}Stremet — Operator Dashboard{% endblock %}
+
+{% block ui_content %}
+<div class="op-dashboard">
+    <div class="op-dashboard-header">
+        <h1 class="op-greeting">
+            <script>
+                (function(){
+                    var h = new Date().getHours();
+                    var g = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+                    document.currentScript.parentElement.textContent = g;
+                })();
+            </script>
+        </h1>
+        <p class="op-date">{{ today|default:"" }}</p>
+    </div>
+
+    <div class="op-metrics-grid">
+        <div class="op-metric">
+            <div class="op-metric-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>
+            </div>
+            <div class="op-metric-value">{{ stats.pending_deliveries }}</div>
+            <div class="op-metric-label">Unstocked Pallets</div>
+        </div>
+
+        <div class="op-metric">
+            <div class="op-metric-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            </div>
+            <div class="op-metric-value">{{ stats.storage_utilization }}%</div>
+            <div class="op-metric-label">Storage Capacity</div>
+        </div>
+
+        <div class="op-metric">
+            <div class="op-metric-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="M12 18v4"/><path d="m4.93 4.93 2.83 2.83"/><path d="m16.24 16.24 2.83 2.83"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="m4.93 19.07 2.83-2.83"/><path d="m16.24 7.76 2.83-2.83"/></svg>
+            </div>
+            <div class="op-metric-value">{{ stats.arriving_today }}</div>
+            <div class="op-metric-label">Arriving Today</div>
+        </div>
+
+        <div class="op-metric">
+            <div class="op-metric-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+            </div>
+            <div class="op-metric-value">{{ stats.total_materials }}</div>
+            <div class="op-metric-label">Total Materials</div>
+        </div>
+    </div>
+
+    {% if recent_logs %}
+    <div class="op-recent-activity">
+        <h2 class="op-section-title">Recent Activity</h2>
+        <div class="op-activity-list">
+            {% for log in recent_logs %}
+            <div class="op-activity-item">
+                <div class="op-activity-dot"></div>
+                <div class="op-activity-content">
+                    <span class="op-activity-title">{{ log.title }}</span>
+                    <span class="op-activity-time">{{ log.timestamp|timesince }} ago</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

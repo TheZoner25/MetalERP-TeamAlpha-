@@ -1,0 +1,844 @@
+{% extends "base_operator.html" %}
+{% load static %}
+
+{% block title %}Stremet — Finished Goods{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.min.js"></script>
+<style>
+/* ── 3D Shelf Overlay (from warehouse_view) ── */
+.wv-shelf-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(255,255,255,0.96);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    z-index: 1100;
+    display: none; flex-direction: column;
+}
+.wv-shelf-overlay.active { display: flex; }
+.wv-shelf-top {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 20px; border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+.wv-shelf-top .shelf-modal-tags { display: flex; gap: 6px; }
+.wv-shelf-top .shelf-tag {
+    padding: 4px 12px; background: rgba(0,0,0,0.06);
+    border-radius: 5px; font-size: 0.75rem; font-weight: 600; color: #333;
+}
+.wv-shelf-close-btn {
+    width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid rgba(0,0,0,0.1); border-radius: 6px;
+    background: #fff; cursor: pointer; color: #666; transition: all 0.15s;
+}
+.wv-shelf-close-btn:hover { background: #f0f0f0; color: #000; }
+.wv-shelf-viewer-body { flex: 1; display: flex; min-height: 0; }
+.wv-shelf-viewer-body .view-pane { position: relative; }
+.wv-shelf-viewer-body .view-pane.view-topdown {
+    flex: 0 0 30%; border-right: 1px solid rgba(0,0,0,0.06);
+    display: flex; flex-direction: column;
+}
+.wv-shelf-viewer-body .view-pane.view-3d { flex: 1; position: relative; }
+.wv-shelf-viewer-body .view-label {
+    font-size: 0.7rem; font-weight: 600; color: #999;
+    text-transform: uppercase; letter-spacing: 0.05em; padding: 8px 14px 4px;
+}
+.wv-shelf-viewer-body .view-topdown canvas {
+    width: 100% !important; height: calc(100% - 28px) !important; display: block;
+}
+.wv-shelf-viewer-body .three-container {
+    width: 100%; height: 100%; min-height: 300px;
+}
+.wv-shelf-viewer-body .three-container canvas {
+    width: 100% !important; height: 100% !important; display: block;
+}
+.wv-shelf-viewer-body .capacity-overlay {
+    position: absolute; top: 12px; right: 14px;
+    width: 70px; height: 70px; pointer-events: none;
+}
+.wv-shelf-viewer-body .capacity-ring-svg { width: 70px; height: 70px; }
+.wv-shelf-viewer-body .capacity-text {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%); text-align: center; line-height: 1;
+}
+.wv-shelf-viewer-body .capacity-percent {
+    font-size: 0.85rem; font-weight: 700; color: #333; display: block;
+}
+.wv-shelf-viewer-body .capacity-label {
+    font-size: 0.55rem; color: #999; text-transform: uppercase; display: block; margin-top: 2px;
+}
+.wv-shelf-viewer-body .shelf-3d-label {
+    position: absolute; bottom: 12px; left: 14px;
+    font-size: 0.75rem; color: #666; font-weight: 500;
+}
+.wv-shelf-bottom {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 20px; border-top: 1px solid rgba(0,0,0,0.06);
+    background: rgba(255,255,255,0.8);
+}
+.wv-shelf-bottom .shelf-capacity-text { font-size: 0.85rem; color: #666; font-weight: 500; }
+</style>
+{% endblock %}
+
+{% block ui_content %}
+<div class="op-page-content" id="fgPageContent">
+    <div class="op-page-header">
+        <h1 class="op-page-title">Finished Goods</h1>
+        <span class="ps-count-badge">{{ pending_orders|length }} to store</span>
+    </div>
+
+    <!-- Pending: Orders that need to be stored -->
+    {% if pending_orders %}
+    <div style="margin-bottom: 32px;">
+        <h2 class="op-section-title" style="margin-bottom: 12px;">Awaiting Storage</h2>
+        <div class="ps-table-wrap">
+            <table class="ps-table" id="pendingTable">
+                <thead>
+                    <tr>
+                        <th>Order ID</th>
+                        <th>Product</th>
+                        <th>Material</th>
+                        <th>Dimensions</th>
+                        <th>Completed</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for o in pending_orders %}
+                    <tr id="fg-row-{{ o.order_id }}">
+                        <td class="ps-cell-mono">{{ o.order_id }}</td>
+                        <td>{{ o.product }}</td>
+                        <td>{{ o.material_name|default:"—" }}</td>
+                        <td>{{ o.dimensions|default:"—" }}</td>
+                        <td class="ps-cell-time">{{ o.created_at|date:"M d, H:i" }}</td>
+                        <td>
+                            <button class="ps-store-btn" onclick="openStoreModal('{{ o.order_id }}', '{{ o.product|escapejs }}')">
+                                Store
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Already Stored -->
+    <h2 class="op-section-title" style="margin-bottom: 12px;">Stored Finished Goods</h2>
+    <div class="ps-table-wrap">
+        <table class="ps-table" id="storedTable">
+            <thead>
+                <tr>
+                    <th>Order ID</th>
+                    <th>Product</th>
+                    <th>Material</th>
+                    <th>Warehouse</th>
+                    <th>Shelf</th>
+                    <th>Slot</th>
+                    <th>Stored At</th>
+                </tr>
+            </thead>
+            <tbody id="storedTableBody">
+                {% for slot in stored_slots %}
+                <tr>
+                    <td class="ps-cell-mono">{{ slot.manufacturing_order.order_id }}</td>
+                    <td>{{ slot.manufacturing_order.product }}</td>
+                    <td>{{ slot.manufacturing_order.material_name|default:"—" }}</td>
+                    <td>{{ slot.warehouse.name|default:"—" }}</td>
+                    <td class="ps-cell-mono">{{ slot.shelf_id }}</td>
+                    <td>{{ slot.slot_index }}</td>
+                    <td class="ps-cell-time">{{ slot.stored_at|date:"M d, H:i" }}</td>
+                </tr>
+                {% empty %}
+                <tr id="storedEmptyRow"><td colspan="7" class="ps-empty">No finished goods stored yet</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!-- Store Modal — Full-screen overlay with steps   -->
+<!-- ═══════════════════════════════════════════════ -->
+<div id="storeModal" class="fg-modal-overlay" style="display:none;">
+    <div class="fg-modal">
+        <!-- Header -->
+        <div class="fg-modal-header">
+            <div class="fg-modal-header-left">
+                <h3 class="fg-modal-title">Store Finished Order</h3>
+                <span class="fg-modal-subtitle" id="storeModalOrder"></span>
+            </div>
+            <button class="fg-modal-close" onclick="closeStoreModal()">&times;</button>
+        </div>
+
+        <!-- Breadcrumb -->
+        <div class="fg-breadcrumb" id="storeBreadcrumb">
+            <span class="fg-bc-item active" id="bc1">1. Warehouse</span>
+            <span class="fg-bc-sep">&rsaquo;</span>
+            <span class="fg-bc-item" id="bc2">2. Location</span>
+            <span class="fg-bc-sep">&rsaquo;</span>
+            <span class="fg-bc-item" id="bc3">3. Shelf</span>
+        </div>
+
+        <!-- Step 1: Choose Warehouse -->
+        <div class="fg-modal-body" id="storeStep1">
+            <h4 class="fg-step-title">Choose Warehouse</h4>
+            <div class="fg-wh-grid">
+                {% for wh in warehouses %}
+                <button class="fg-wh-card" onclick="selectWarehouse({{ wh.id }}, '{{ wh.name|escapejs }}', '{{ wh.code|escapejs }}')">
+                    <div class="fg-wh-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                    </div>
+                    <div class="fg-wh-name">{{ wh.name }}</div>
+                    <div class="fg-wh-code">{{ wh.code }}</div>
+                </button>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Step 2: Warehouse Map — pick sector/unit -->
+        <div class="fg-modal-body" id="storeStep2" style="display:none;">
+            <div class="fg-step-header">
+                <button class="fg-back-btn" onclick="backToStep1()">&larr; Back</button>
+                <span class="fg-step-wh-name" id="storeWhName"></span>
+            </div>
+            <h4 class="fg-step-title">Select Storage Location</h4>
+            <p class="fg-step-desc">Click a storage cell on the map to choose where to store the order.</p>
+
+            <!-- Map Legend -->
+            <div class="fg-map-legend">
+                <div class="fg-legend-item"><span class="fg-legend-dot fg-dot-empty"></span>Empty</div>
+                <div class="fg-legend-item"><span class="fg-legend-dot fg-dot-partial"></span>Partial</div>
+                <div class="fg-legend-item"><span class="fg-legend-dot fg-dot-full"></span>Full</div>
+                <div class="fg-legend-item"><span class="fg-legend-dot fg-dot-wall"></span>Wall</div>
+                <div class="fg-legend-item"><span class="fg-legend-dot fg-dot-walkway"></span>Walkway</div>
+                <div class="fg-legend-item"><span class="fg-legend-dot fg-dot-dock"></span>Dock</div>
+            </div>
+
+            <!-- Map Grid -->
+            <div class="fg-map-wrap">
+                <div class="fg-map-grid" id="fgWarehouseGrid">
+                    <p style="color:#999;font-size:0.85rem;padding:40px;">Loading map...</p>
+                </div>
+            </div>
+
+            <!-- Fallback: No layout configured -->
+            <div id="fgFallbackSectors" style="display:none;">
+                <p class="fg-step-desc" style="margin-top:8px;">No floor plan configured. Choose a sector and unit:</p>
+                <div class="fg-sector-grid" id="fgSectorGrid"></div>
+            </div>
+        </div>
+
+        <!-- Step 3: Unit shelves — pick shelf level, opens 3D -->
+        <div class="fg-modal-body" id="storeStep3" style="display:none;">
+            <div class="fg-step-header">
+                <button class="fg-back-btn" onclick="backToStep2()">&larr; Back</button>
+                <span class="fg-step-wh-name" id="storeUnitName"></span>
+            </div>
+            <h4 class="fg-step-title">Choose Shelf Level</h4>
+            <p class="fg-step-desc">Select which shelf level to store on. The 3D view will open.</p>
+            <div class="fg-shelf-grid" id="fgShelfGrid"></div>
+        </div>
+
+        <!-- Step 4: Success confirmation -->
+        <div class="fg-modal-body" id="storeStep4" style="display:none;">
+            <div class="fg-success-wrap">
+                <div class="fg-success-icon">&#10003;</div>
+                <div class="fg-success-msg" id="storeConfirmMsg"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 3D Shelf Overlay (reused from warehouse_view pattern) -->
+<div class="wv-shelf-overlay" id="shelfOverlay">
+    <div class="wv-shelf-top">
+        <div class="shelf-modal-tags" id="shelfModalHeader"></div>
+        <button class="wv-shelf-close-btn" id="shelfCloseBtn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+    </div>
+    <div class="wv-shelf-viewer-body">
+        <div class="view-pane view-topdown">
+            <div class="view-label">Top View</div>
+            <canvas id="topdownCanvas"></canvas>
+        </div>
+        <div class="view-pane view-3d">
+            <div class="view-label">3D View</div>
+            <div class="three-container" id="threeContainer"></div>
+            <div class="capacity-overlay">
+                <svg class="capacity-ring-svg" viewBox="0 0 80 80">
+                    <circle cx="40" cy="40" r="36" fill="none" stroke="rgba(0,0,0,0.08)" stroke-width="4"/>
+                    <circle id="capacityRing" cx="40" cy="40" r="36" fill="none" stroke="rgba(0,0,0,0.6)" stroke-width="4"
+                            stroke-dasharray="226.2" stroke-dashoffset="226.2"
+                            stroke-linecap="round" transform="rotate(-90 40 40)"
+                            style="transition: stroke-dashoffset 0.6s ease"/>
+                </svg>
+                <div class="capacity-text">
+                    <span id="capacityPercent" class="capacity-percent">0%</span>
+                    <span class="capacity-label">Capacity</span>
+                </div>
+            </div>
+            <div class="shelf-3d-label" id="shelfLabel3D"></div>
+        </div>
+    </div>
+    <div class="wv-shelf-bottom">
+        <span id="shelfCapacity" class="shelf-capacity-text">0% Full</span>
+        <button id="markStoredBtn" class="wv-store-btn">Store Finished Order</button>
+    </div>
+</div>
+
+<style>
+/* ── Store Modal ── */
+.fg-modal-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.fg-modal {
+    background: #fff;
+    border-radius: 16px;
+    width: 680px;
+    max-width: 95vw;
+    max-height: 85vh;
+    overflow-y: auto;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.18);
+}
+.fg-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 18px 24px;
+    border-bottom: 1px solid #f0f0f0;
+}
+.fg-modal-header-left { display: flex; flex-direction: column; gap: 2px; }
+.fg-modal-title { font-size: 1.05rem; font-weight: 700; margin: 0; }
+.fg-modal-subtitle { font-size: 0.78rem; color: #888; }
+.fg-modal-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #999; line-height: 1; }
+.fg-modal-close:hover { color: #333; }
+.fg-modal-body { padding: 20px 24px 24px; }
+
+/* Breadcrumb */
+.fg-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 24px;
+    background: #fafafa;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #bbb;
+}
+.fg-bc-item.active { color: #222; font-weight: 700; }
+.fg-bc-item.done { color: #16a34a; }
+.fg-bc-sep { color: #ddd; }
+
+/* Step header */
+.fg-step-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.fg-back-btn {
+    font-size: 0.78rem; font-weight: 600; color: #666; background: none; border: none; cursor: pointer;
+    padding: 4px 8px; border-radius: 6px;
+}
+.fg-back-btn:hover { background: #f0f0f0; color: #222; }
+.fg-step-wh-name { font-weight: 600; font-size: 0.85rem; color: #333; }
+.fg-step-title { font-size: 0.9rem; font-weight: 700; margin: 0 0 4px; color: #222; }
+.fg-step-desc { font-size: 0.78rem; color: #888; margin: 0 0 14px; }
+
+/* Warehouse cards */
+.fg-wh-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+}
+.fg-wh-card {
+    padding: 18px 16px;
+    border: 1.5px solid #e8e8e8;
+    border-radius: 12px;
+    background: #fafafa;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.15s ease;
+}
+.fg-wh-card:hover { border-color: #222; background: #f5f5f5; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
+.fg-wh-icon { margin-bottom: 8px; color: #666; }
+.fg-wh-name { font-size: 0.85rem; font-weight: 700; color: #222; }
+.fg-wh-code { font-size: 0.7rem; color: #999; margin-top: 2px; }
+
+/* Map Legend */
+.fg-map-legend {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+.fg-legend-item { display: flex; align-items: center; gap: 5px; font-size: 0.68rem; color: #888; font-weight: 500; }
+.fg-legend-dot { width: 10px; height: 10px; border-radius: 3px; }
+.fg-dot-empty { background: #2e7d32; }
+.fg-dot-partial { background: #e65100; }
+.fg-dot-full { background: #c62828; }
+.fg-dot-wall { background: #555; }
+.fg-dot-walkway { background: #D8D8D8; }
+.fg-dot-dock { background: #E8943A; }
+
+/* Map Grid */
+.fg-map-wrap {
+    display: flex;
+    justify-content: center;
+    overflow-x: auto;
+    padding: 4px;
+}
+.fg-map-grid {
+    display: inline-grid;
+    gap: 3px;
+    padding: 3px;
+    background: #f0f0f0;
+    border-radius: 8px;
+}
+.fg-map-cell {
+    width: 48px;
+    height: 48px;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.58rem;
+    font-weight: 700;
+    color: #fff;
+    cursor: default;
+    position: relative;
+    transition: transform 0.12s, box-shadow 0.12s;
+}
+.fg-map-cell.cell-storage { cursor: pointer; }
+.fg-map-cell.cell-storage:hover { transform: scale(1.1); box-shadow: 0 2px 8px rgba(0,0,0,0.18); z-index: 2; }
+.fg-map-cell.cell-storage.occ-empty { background: #2e7d32; }
+.fg-map-cell.cell-storage.occ-partial { background: #e65100; }
+.fg-map-cell.cell-storage.occ-full { background: #c62828; }
+.fg-map-cell.cell-wall { background: #555; }
+.fg-map-cell.cell-walkway { background: #D8D8D8; }
+.fg-map-cell.cell-dock { background: #E8943A; }
+.fg-map-cell.cell-empty { background: #f8f8f8; border: 1px solid #e8e8e8; }
+.fg-cell-tooltip {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #222;
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 500;
+    padding: 4px 8px;
+    border-radius: 5px;
+    white-space: nowrap;
+    z-index: 10;
+    pointer-events: none;
+}
+.fg-map-cell:hover .fg-cell-tooltip { display: block; }
+
+/* Fallback sector grid (no layout configured) */
+.fg-sector-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+}
+.fg-sector-btn {
+    padding: 14px 10px;
+    border: 1.5px solid #e0e0e0;
+    border-radius: 10px;
+    background: #fafafa;
+    cursor: pointer;
+    text-align: center;
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: #333;
+    transition: all 0.12s;
+}
+.fg-sector-btn:hover { border-color: #222; background: #f0f0f0; }
+.fg-sector-btn .fg-sector-sub { font-size: 0.68rem; font-weight: 500; color: #999; margin-top: 2px; }
+
+/* Shelf level grid */
+.fg-shelf-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+}
+.fg-shelf-card {
+    padding: 16px 12px;
+    border: 1.5px solid #e0e0e0;
+    border-radius: 10px;
+    background: #fafafa;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.12s;
+}
+.fg-shelf-card:hover { border-color: #222; background: #f0f0f0; transform: translateY(-1px); }
+.fg-shelf-card.shelf-full { opacity: 0.45; cursor: default; }
+.fg-shelf-card.shelf-full:hover { border-color: #e0e0e0; background: #fafafa; transform: none; }
+.fg-shelf-level { font-size: 0.95rem; font-weight: 800; color: #222; }
+.fg-shelf-label { font-size: 0.68rem; color: #999; margin-top: 2px; }
+.fg-shelf-bar {
+    height: 4px;
+    background: #eee;
+    border-radius: 2px;
+    margin-top: 8px;
+    overflow: hidden;
+}
+.fg-shelf-bar-fill { height: 100%; border-radius: 2px; transition: width 0.3s; }
+.fg-bar-low { background: #2e7d32; }
+.fg-bar-mid { background: #e65100; }
+.fg-bar-high { background: #c62828; }
+
+/* Success */
+.fg-success-wrap { text-align: center; padding: 32px 0; }
+.fg-success-icon {
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    background: #f0fdf4;
+    color: #16a34a;
+    font-size: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 12px;
+    font-weight: 700;
+}
+.fg-success-msg { font-size: 0.9rem; font-weight: 500; color: #333; line-height: 1.6; }
+
+/* Store button in table */
+.ps-store-btn {
+    padding: 5px 16px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: #222;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.12s;
+}
+.ps-store-btn:hover { background: #444; }
+
+/* 3D shelf overlay store button */
+.wv-store-btn {
+    padding: 8px 20px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    background: #222;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.wv-store-btn:hover:not(:disabled) { background: #444; }
+.wv-store-btn:disabled { background: #999; cursor: default; }
+</style>
+
+<script src="{% static 'js/shelf3d.js' %}"></script>
+<script>
+(function() {
+    var storeOrderId = '';
+    var storeProductName = '';
+    var selectedWarehouseId = null;
+    var selectedWarehouseName = '';
+    var selectedWarehouseCode = '';
+    var selectedSector = null;
+    var selectedUnit = null;
+    var mapData = null;
+
+    // ── Step navigation helpers ──
+    function showStep(num) {
+        for (var i = 1; i <= 4; i++) {
+            var el = document.getElementById('storeStep' + i);
+            if (el) el.style.display = (i === num) ? '' : 'none';
+        }
+        // Update breadcrumb
+        for (var j = 1; j <= 3; j++) {
+            var bc = document.getElementById('bc' + j);
+            if (bc) {
+                bc.className = 'fg-bc-item';
+                if (j < num) bc.classList.add('done');
+                if (j === num) bc.classList.add('active');
+            }
+        }
+    }
+
+    // ── Step 1: Open modal ──
+    window.openStoreModal = function(orderId, product) {
+        storeOrderId = orderId;
+        storeProductName = product;
+        document.getElementById('storeModalOrder').textContent = orderId + ' \u2014 ' + product;
+        showStep(1);
+        document.getElementById('storeModal').style.display = 'flex';
+    };
+
+    window.closeStoreModal = function() {
+        document.getElementById('storeModal').style.display = 'none';
+    };
+
+    // ── Step 2: Select warehouse, load map ──
+    window.selectWarehouse = function(whId, whName, whCode) {
+        selectedWarehouseId = whId;
+        selectedWarehouseName = whName;
+        selectedWarehouseCode = whCode;
+        document.getElementById('storeWhName').textContent = whName + ' (' + whCode + ')';
+        showStep(2);
+
+        // Load warehouse map
+        var grid = document.getElementById('fgWarehouseGrid');
+        grid.innerHTML = '<p style="color:#999;font-size:0.85rem;padding:40px;">Loading map...</p>';
+
+        fetch('/api/warehouse-map/?warehouse_id=' + whId)
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                mapData = data;
+                if (data.layout && data.layout.cells && data.layout.cells.length > 0) {
+                    document.getElementById('fgFallbackSectors').style.display = 'none';
+                    renderMapGrid(data);
+                } else {
+                    // No layout — show sector/unit fallback
+                    grid.innerHTML = '';
+                    document.getElementById('fgFallbackSectors').style.display = '';
+                    renderFallbackSectors(data);
+                }
+            })
+            .catch(function() {
+                grid.innerHTML = '<p style="color:#d44;font-size:0.85rem;padding:20px;">Failed to load map</p>';
+            });
+    };
+
+    function renderMapGrid(data) {
+        var cells = data.layout.cells;
+        var grid = document.getElementById('fgWarehouseGrid');
+        var maxRow = 0, maxCol = 0;
+        cells.forEach(function(c) {
+            if (c.row > maxRow) maxRow = c.row;
+            if (c.col > maxCol) maxCol = c.col;
+        });
+        var cols = maxCol + 1;
+        grid.style.gridTemplateColumns = 'repeat(' + cols + ', 48px)';
+
+        var cellMap = {};
+        cells.forEach(function(c) { cellMap[c.row + ',' + c.col] = c; });
+
+        var html = '';
+        for (var r = 0; r <= maxRow; r++) {
+            for (var c = 0; c <= maxCol; c++) {
+                var cell = cellMap[r + ',' + c] || { cell_type: 'empty' };
+                var cls = 'fg-map-cell cell-' + cell.cell_type;
+                var attrs = '';
+                var inner = '';
+
+                if (cell.cell_type === 'storage' && cell.sector != null && cell.unit) {
+                    if (cell.status === 'full') cls += ' occ-full';
+                    else if (cell.status === 'partial') cls += ' occ-partial';
+                    else cls += ' occ-empty';
+
+                    attrs = ' onclick="pickStorageCell(' + cell.sector + ', \'' + cell.unit + '\')"';
+                    inner = '<span>' + (cell.label || '') + '</span>';
+                    var tip = (cell.label || cell.sector + '-' + cell.unit);
+                    if (cell.total != null) tip += ': ' + (cell.occupied || 0) + '/' + cell.total + ' slots';
+                    inner += '<span class="fg-cell-tooltip">' + tip + '</span>';
+                } else if (cell.cell_type === 'dock') {
+                    inner = '<span>D</span>';
+                } else if (cell.cell_type === 'wall') {
+                    attrs = ' title="Wall"';
+                }
+
+                html += '<div class="' + cls + '"' + attrs + '>' + inner + '</div>';
+            }
+        }
+        grid.innerHTML = html;
+    }
+
+    function renderFallbackSectors(data) {
+        var sectors = data.sectors;
+        var grid = document.getElementById('fgSectorGrid');
+        var html = '';
+        var sectorKeys = Object.keys(sectors).sort();
+        sectorKeys.forEach(function(s) {
+            var units = Object.keys(sectors[s]).sort();
+            units.forEach(function(u) {
+                var shelves = sectors[s][u];
+                var totalOcc = 0, totalCap = 0;
+                Object.keys(shelves).forEach(function(sh) {
+                    totalOcc += shelves[sh].occupied;
+                    totalCap += shelves[sh].total;
+                });
+                var label = 'S' + s + '-' + u;
+                html += '<button class="fg-sector-btn" onclick="pickStorageCell(' + s + ', \'' + u + '\')">';
+                html += label;
+                html += '<div class="fg-sector-sub">' + totalOcc + '/' + totalCap + ' slots</div>';
+                html += '</button>';
+            });
+        });
+        grid.innerHTML = html;
+    }
+
+    // ── Step 3: Pick shelf level ──
+    window.pickStorageCell = function(sector, unit) {
+        selectedSector = sector;
+        selectedUnit = unit;
+        document.getElementById('storeUnitName').textContent = selectedWarehouseName + ' \u2014 Sector ' + sector + ', Unit ' + unit;
+        showStep(3);
+
+        var shelfGrid = document.getElementById('fgShelfGrid');
+        shelfGrid.innerHTML = '<p style="color:#999;font-size:0.8rem;">Loading shelves...</p>';
+
+        // Get shelf data from map data
+        var shelves = {};
+        if (mapData && mapData.sectors && mapData.sectors[String(sector)] && mapData.sectors[String(sector)][String(unit)]) {
+            shelves = mapData.sectors[String(sector)][String(unit)];
+        }
+
+        var shelvesPerUnit = (mapData && mapData.shelves_per_unit) || 4;
+        var slotsPerShelf = (mapData && mapData.slots_per_shelf) || 4;
+
+        var html = '';
+        for (var sh = 1; sh <= shelvesPerUnit; sh++) {
+            var info = shelves[String(sh)] || { occupied: 0, total: slotsPerShelf, status: 'empty' };
+            var pct = info.total > 0 ? Math.round(info.occupied / info.total * 100) : 0;
+            var isFull = info.occupied >= info.total;
+            var barClass = pct < 50 ? 'fg-bar-low' : (pct < 85 ? 'fg-bar-mid' : 'fg-bar-high');
+            var shelfId = sector + '-' + unit + '-' + sh;
+
+            html += '<div class="fg-shelf-card' + (isFull ? ' shelf-full' : '') + '"';
+            if (!isFull) {
+                html += ' onclick="openShelf3D(\'' + shelfId + '\')"';
+            }
+            html += '>';
+            html += '<div class="fg-shelf-level">Level ' + sh + '</div>';
+            html += '<div class="fg-shelf-label">' + info.occupied + '/' + info.total + ' slots</div>';
+            html += '<div class="fg-shelf-bar"><div class="fg-shelf-bar-fill ' + barClass + '" style="width:' + pct + '%"></div></div>';
+            if (isFull) {
+                html += '<div class="fg-shelf-label" style="color:#c62828; margin-top:4px;">Full</div>';
+            }
+            html += '</div>';
+        }
+        shelfGrid.innerHTML = html;
+    };
+
+    // ── Step 4: Open 3D shelf and store ──
+    window.openShelf3D = function(shelfId) {
+        // Hide the modal temporarily so the 3D overlay shows clean
+        document.getElementById('storeModal').style.display = 'none';
+
+        var overlay = document.getElementById('shelfOverlay');
+        var pageContent = document.getElementById('fgPageContent');
+        if (pageContent) { pageContent.scrollTop = 0; pageContent.style.overflow = 'hidden'; }
+        overlay.classList.add('active');
+
+        Shelf3D.openForMO(shelfId, storeOrderId, selectedWarehouseId, function(data) {
+            // Real-time update: move row from pending to stored
+            var row = document.getElementById('fg-row-' + storeOrderId);
+            if (row) {
+                row.style.transition = 'opacity 0.4s, transform 0.4s';
+                row.style.opacity = '0';
+                row.style.transform = 'translateX(20px)';
+                setTimeout(function() { row.remove(); }, 400);
+            }
+
+            // Update badge count
+            var badge = document.querySelector('.ps-count-badge');
+            if (badge) {
+                var count = document.querySelectorAll('#pendingTable tbody tr').length - 1;
+                badge.textContent = Math.max(0, count) + ' to store';
+            }
+
+            // Add to stored table
+            var storedBody = document.getElementById('storedTableBody');
+            var emptyRow = document.getElementById('storedEmptyRow');
+            if (emptyRow) emptyRow.remove();
+
+            var now = new Date();
+            var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            var timeStr = months[now.getMonth()] + ' ' + String(now.getDate()).padStart(2,'0') + ', ' +
+                          String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+
+            var newRow = document.createElement('tr');
+            newRow.style.animation = 'fadeSlideIn 0.4s ease';
+            newRow.innerHTML =
+                '<td class="ps-cell-mono">' + data.order_id + '</td>' +
+                '<td>' + storeProductName + '</td>' +
+                '<td>\u2014</td>' +
+                '<td>' + data.warehouse + '</td>' +
+                '<td class="ps-cell-mono">' + data.shelf_id + '</td>' +
+                '<td>' + data.slot_index + '</td>' +
+                '<td class="ps-cell-time">' + timeStr + '</td>';
+            storedBody.insertBefore(newRow, storedBody.firstChild);
+
+            // After a short delay, show success in modal and close 3D
+            setTimeout(function() {
+                closeShelfView();
+                document.getElementById('storeModal').style.display = 'flex';
+                showStep(4);
+                document.getElementById('storeConfirmMsg').innerHTML =
+                    '<strong>' + data.order_id + '</strong> stored on shelf <strong>' + data.shelf_id + '</strong> slot ' + data.slot_index +
+                    '<br>in <strong>' + data.warehouse + '</strong>';
+
+                // Auto-close modal after 2s
+                setTimeout(function() {
+                    closeStoreModal();
+                }, 2000);
+            }, 1200);
+        });
+    };
+
+    // ── Navigation ──
+    window.backToStep1 = function() {
+        showStep(1);
+    };
+
+    window.backToStep2 = function() {
+        showStep(2);
+    };
+
+    // ── 3D Shelf Viewer ──
+    var overlay = document.getElementById('shelfOverlay');
+    var closeBtn = document.getElementById('shelfCloseBtn');
+    var pageContent = document.getElementById('fgPageContent');
+
+    function closeShelfView() {
+        overlay.classList.remove('active');
+        if (pageContent) pageContent.style.overflow = '';
+        Shelf3D.close();
+    }
+
+    if (closeBtn) closeBtn.addEventListener('click', function() {
+        closeShelfView();
+        // Re-show the modal at step 3
+        document.getElementById('storeModal').style.display = 'flex';
+    });
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            if (overlay.classList.contains('active')) {
+                closeShelfView();
+                document.getElementById('storeModal').style.display = 'flex';
+            } else if (document.getElementById('storeModal').style.display !== 'none') {
+                closeStoreModal();
+            }
+        }
+    });
+})();
+</script>
+
+<style>
+@keyframes fadeSlideIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+</style>
+
+{% csrf_token %}
+{% endblock %}

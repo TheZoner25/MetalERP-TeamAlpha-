@@ -1,0 +1,1619 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Machine Health - Stremet{% endblock %}
+{% block page_title %}Machine Health{% endblock %}
+
+{% block extra_head %}
+<style>
+    .health-page-layout {
+        display: flex;
+        gap: 0;
+        min-height: calc(100vh - 60px);
+    }
+    .health-main {
+        flex: 1;
+        min-width: 0;
+        transition: margin-right 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .health-main.inspector-open {
+        margin-right: 400px;
+    }
+
+    .health-header {
+        margin-bottom: 24px;
+    }
+    .health-title {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        letter-spacing: -0.3px;
+    }
+    .health-subtitle {
+        font-size: 0.82rem;
+        color: var(--text-muted);
+        margin-top: 2px;
+        letter-spacing: 0.2px;
+    }
+
+    /* Overall System Health Bar */
+    .system-health-bar-container {
+        padding: 20px 24px;
+        margin-bottom: 24px;
+    }
+    .system-health-label {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin-bottom: 10px;
+    }
+    .system-health-label span:first-child {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+    }
+    .system-health-pct {
+        font-size: 1.6rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        letter-spacing: -0.5px;
+    }
+    .system-bar-track {
+        width: 100%;
+        height: 10px;
+        background: rgba(0, 0, 0, 0.06);
+        border-radius: 5px;
+        overflow: hidden;
+    }
+    .system-bar-fill {
+        height: 100%;
+        border-radius: 5px;
+        background: var(--text-primary);
+        transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* Machine Cards Grid */
+    .machine-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 24px;
+    }
+    .machine-card {
+        padding: 24px 20px 20px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        transition: box-shadow var(--transition), transform var(--transition);
+        cursor: pointer;
+    }
+    .machine-card:hover {
+        box-shadow: var(--shadow-md);
+        transform: translateY(-2px);
+    }
+    .machine-card.card-selected {
+        border-color: rgba(0,0,0,0.25);
+        box-shadow: var(--shadow-md), 0 0 0 2px rgba(0,0,0,0.08);
+    }
+
+    /* SVG Gauge */
+    .gauge-wrapper {
+        position: relative;
+        width: 120px;
+        height: 120px;
+        margin-bottom: 14px;
+    }
+    .gauge-wrapper svg {
+        transform: rotate(-90deg);
+    }
+    .health-gauge-bg {
+        fill: none;
+        stroke: rgba(0, 0, 0, 0.06);
+        stroke-width: 8;
+    }
+    .health-gauge-circle {
+        fill: none;
+        stroke-width: 8;
+        stroke-linecap: round;
+        transition: stroke-dashoffset 0.6s cubic-bezier(0.4, 0, 0.2, 1), stroke 0.4s ease;
+    }
+    .gauge-text {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+    }
+    .gauge-pct {
+        font-size: 1.55rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        line-height: 1;
+        letter-spacing: -0.5px;
+    }
+    .gauge-pct-sign {
+        font-size: 0.7rem;
+        font-weight: 600;
+        color: var(--text-muted);
+    }
+
+    /* Machine Info */
+    .machine-name {
+        font-size: 0.92rem;
+        font-weight: 500;
+        color: var(--text-primary);
+        text-align: center;
+        margin-bottom: 2px;
+    }
+    .machine-id {
+        font-size: 0.72rem;
+        font-weight: 500;
+        color: var(--text-muted);
+        letter-spacing: 0.5px;
+        margin-bottom: 4px;
+    }
+    .machine-desc {
+        font-size: 0.72rem;
+        color: var(--text-muted);
+        text-align: center;
+        margin-bottom: 12px;
+    }
+    .machine-illustration {
+        width: 48px;
+        height: 48px;
+        margin: 0 auto 8px;
+        opacity: 0.18;
+    }
+    .machine-illustration svg {
+        width: 100%;
+        height: 100%;
+    }
+
+    /* Stats Row */
+    .machine-stats {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-bottom: 14px;
+    }
+    .stat-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.78rem;
+    }
+    .stat-label {
+        color: var(--text-muted);
+        font-weight: 500;
+    }
+    .stat-value {
+        color: var(--text-primary);
+        font-weight: 500;
+    }
+
+    /* Status Badge */
+    .status-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.3px;
+        margin-bottom: 16px;
+    }
+    .status-operational {
+        background: rgba(0, 0, 0, 0.08);
+        color: var(--text-secondary);
+    }
+    .status-wear {
+        background: rgba(0, 0, 0, 0.18);
+        color: #333;
+    }
+    .status-maintenance {
+        background: rgba(0, 0, 0, 0.45);
+        color: #fff;
+    }
+    .status-critical {
+        background: rgba(0, 0, 0, 0.9);
+        color: #fff;
+    }
+
+    /* Threshold Slider */
+    .threshold-section {
+        width: 100%;
+        margin-bottom: 14px;
+    }
+    .threshold-label {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.72rem;
+        color: var(--text-muted);
+        margin-bottom: 5px;
+    }
+    .threshold-label strong {
+        color: var(--text-primary);
+        font-weight: 600;
+    }
+    .threshold-slider {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 100%;
+        height: 4px;
+        border-radius: 2px;
+        background: rgba(0, 0, 0, 0.1);
+        outline: none;
+        transition: background var(--transition);
+    }
+    .threshold-slider::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: var(--text-primary);
+        cursor: pointer;
+        border: 2px solid #fff;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+    }
+    .threshold-slider::-moz-range-thumb {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: var(--text-primary);
+        cursor: pointer;
+        border: 2px solid #fff;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+    }
+
+    /* Maintenance Button */
+    .btn-maintenance {
+        width: 100%;
+        padding: 8px 16px;
+        border-radius: var(--radius-sm);
+        font-size: 0.78rem;
+        font-weight: 600;
+        background: var(--text-primary);
+        color: #fff;
+        transition: opacity var(--transition), transform var(--transition);
+        letter-spacing: 0.2px;
+    }
+    .btn-maintenance:hover {
+        opacity: 0.85;
+        transform: scale(0.98);
+    }
+    .btn-maintenance:active {
+        transform: scale(0.96);
+    }
+
+    /* Divider */
+    .card-divider {
+        width: 100%;
+        height: 1px;
+        background: rgba(0, 0, 0, 0.06);
+        margin: 4px 0 12px;
+    }
+
+    /* ============================
+       Inspector Panel (right side)
+       ============================ */
+    .inspector-panel {
+        position: fixed;
+        top: 0;
+        right: 0;
+        width: 400px;
+        height: calc(100vh - var(--bottombar-height));
+        background: rgba(255,255,255,0.97);
+        backdrop-filter: blur(48px) saturate(1.6);
+        -webkit-backdrop-filter: blur(48px) saturate(1.6);
+        border-left: 1px solid rgba(0,0,0,0.08);
+        box-shadow: -8px 0 40px rgba(0,0,0,0.08);
+        z-index: 150;
+        overflow-y: auto;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+        transform: translateX(100%);
+        transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+        padding: 28px 24px 40px;
+    }
+    .inspector-panel::-webkit-scrollbar { display: none; }
+    .inspector-panel.open {
+        transform: translateX(0);
+    }
+    .inspector-close {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        color: var(--text-muted);
+        padding: 6px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all var(--transition);
+    }
+    .inspector-close:hover {
+        background: rgba(0,0,0,0.06);
+        color: var(--text-primary);
+    }
+    .inspector-machine-name {
+        font-size: 1.2rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 2px;
+        padding-right: 36px;
+    }
+    .inspector-machine-id {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        letter-spacing: 0.5px;
+        margin-bottom: 20px;
+    }
+    .inspector-section {
+        margin-bottom: 20px;
+    }
+    .inspector-section-title {
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        margin-bottom: 10px;
+    }
+    .inspector-divider {
+        height: 1px;
+        background: rgba(0,0,0,0.06);
+        margin: 20px 0;
+    }
+
+    /* Resource levels (oil, coolant, etc.) */
+    .resource-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 10px;
+    }
+    .resource-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        background: rgba(0,0,0,0.04);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+    .resource-icon svg {
+        width: 14px;
+        height: 14px;
+        color: var(--text-muted);
+    }
+    .resource-info {
+        flex: 1;
+        min-width: 0;
+    }
+    .resource-name {
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        margin-bottom: 4px;
+    }
+    .resource-bar-track {
+        width: 100%;
+        height: 4px;
+        background: rgba(0,0,0,0.06);
+        border-radius: 2px;
+        overflow: hidden;
+    }
+    .resource-bar-fill {
+        height: 100%;
+        border-radius: 2px;
+        background: var(--text-primary);
+        transition: width 0.4s ease;
+    }
+    .resource-bar-fill.low {
+        background: #ff3b30;
+    }
+    .resource-pct {
+        font-size: 0.72rem;
+        font-weight: 500;
+        color: var(--text-primary);
+        width: 32px;
+        text-align: right;
+        flex-shrink: 0;
+    }
+
+    /* Info grid */
+    .info-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+    }
+    .info-item {
+        padding: 10px 12px;
+        border: 1px solid rgba(0,0,0,0.06);
+        border-radius: 10px;
+    }
+    .info-item-label {
+        font-size: 0.68rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-bottom: 3px;
+    }
+    .info-item-value {
+        font-size: 0.88rem;
+        font-weight: 500;
+        color: var(--text-primary);
+    }
+
+    /* Parts list */
+    .parts-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+    .parts-list li {
+        font-size: 0.78rem;
+        color: var(--text-secondary);
+        padding: 6px 0;
+        border-bottom: 1px solid rgba(0,0,0,0.04);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .parts-list li:last-child { border-bottom: none; }
+    .parts-dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: rgba(0,0,0,0.2);
+        flex-shrink: 0;
+    }
+
+    /* Maintenance log */
+    .maint-entry {
+        padding: 10px 0;
+        border-bottom: 1px solid rgba(0,0,0,0.04);
+    }
+    .maint-entry:last-child { border-bottom: none; }
+    .maint-date {
+        font-size: 0.7rem;
+        color: var(--text-muted);
+        margin-bottom: 2px;
+    }
+    .maint-desc {
+        font-size: 0.78rem;
+        color: var(--text-secondary);
+        margin-bottom: 3px;
+    }
+    .maint-meta {
+        display: flex;
+        gap: 12px;
+        font-size: 0.7rem;
+        color: var(--text-muted);
+    }
+    .maint-type-badge {
+        display: inline-block;
+        padding: 1px 8px;
+        border-radius: 4px;
+        font-size: 0.65rem;
+        font-weight: 600;
+        letter-spacing: 0.3px;
+    }
+    .maint-type-badge.preventive {
+        background: rgba(0,0,0,0.06);
+        color: var(--text-secondary);
+    }
+    .maint-type-badge.corrective {
+        background: rgba(0,0,0,0.12);
+        color: var(--text-primary);
+    }
+
+    /* Active status indicator */
+    .active-status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 14px;
+        border-radius: 10px;
+        border: 1px solid rgba(0,0,0,0.06);
+        margin-bottom: 6px;
+    }
+    .active-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+    }
+    .active-dot.online {
+        background: #1A1A1A;
+        box-shadow: 0 0 6px rgba(0,0,0,0.3);
+    }
+    .active-dot.offline {
+        background: rgba(0,0,0,0.15);
+    }
+    .active-text {
+        font-size: 0.78rem;
+        color: var(--text-primary);
+        font-weight: 500;
+    }
+    .active-sub {
+        font-size: 0.7rem;
+        color: var(--text-muted);
+    }
+
+    /* Editable fields */
+    .editable-input {
+        width: 100%;
+        padding: 6px 10px;
+        border: 1px solid rgba(0,0,0,0.08);
+        border-radius: 8px;
+        font-size: 0.82rem;
+        font-family: inherit;
+        color: var(--text-primary);
+        background: rgba(0,0,0,0.02);
+        transition: border-color 0.2s, background 0.2s;
+        outline: none;
+    }
+    .editable-input:focus {
+        border-color: rgba(0,0,0,0.2);
+        background: #fff;
+    }
+    .editable-input::placeholder {
+        color: var(--text-muted);
+        opacity: 0.7;
+    }
+    .editable-input.small {
+        padding: 4px 8px;
+        font-size: 0.78rem;
+    }
+
+    /* Resource slider */
+    .resource-slider {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 100%;
+        height: 4px;
+        border-radius: 2px;
+        background: rgba(0,0,0,0.1);
+        outline: none;
+        cursor: pointer;
+    }
+    .resource-slider::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--text-primary);
+        cursor: pointer;
+        border: 2px solid #fff;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .resource-slider::-moz-range-thumb {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--text-primary);
+        cursor: pointer;
+        border: 2px solid #fff;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+
+    /* Editable parts list */
+    .part-edit-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 6px;
+    }
+    .part-edit-row .editable-input {
+        flex: 1;
+    }
+    .btn-icon {
+        width: 24px;
+        height: 24px;
+        border-radius: 6px;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-muted);
+        transition: all var(--transition);
+        flex-shrink: 0;
+    }
+    .btn-icon:hover {
+        background: rgba(0,0,0,0.06);
+        color: var(--text-primary);
+    }
+    .btn-icon.danger:hover {
+        background: rgba(200,0,0,0.08);
+        color: #c00;
+    }
+
+    /* Add button */
+    .btn-add {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 5px 12px;
+        border-radius: 8px;
+        border: 1px dashed rgba(0,0,0,0.12);
+        background: transparent;
+        font-size: 0.72rem;
+        font-weight: 500;
+        color: var(--text-muted);
+        cursor: pointer;
+        transition: all var(--transition);
+        margin-top: 6px;
+    }
+    .btn-add:hover {
+        border-color: rgba(0,0,0,0.25);
+        color: var(--text-primary);
+        background: rgba(0,0,0,0.02);
+    }
+
+    /* Maintenance entry edit */
+    .maint-edit-block {
+        padding: 10px 0;
+        border-bottom: 1px solid rgba(0,0,0,0.04);
+    }
+    .maint-edit-block:last-child { border-bottom: none; }
+    .maint-edit-row {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 4px;
+        align-items: center;
+    }
+    .maint-edit-row .editable-input { flex: 1; }
+    .maint-edit-row select {
+        padding: 4px 8px;
+        border: 1px solid rgba(0,0,0,0.08);
+        border-radius: 8px;
+        font-size: 0.78rem;
+        font-family: inherit;
+        color: var(--text-primary);
+        background: rgba(0,0,0,0.02);
+        outline: none;
+        cursor: pointer;
+    }
+
+    /* Save indicator */
+    .save-indicator {
+        position: fixed;
+        bottom: calc(var(--bottombar-height) + 20px);
+        right: 420px;
+        padding: 8px 16px;
+        border-radius: 8px;
+        background: var(--text-primary);
+        color: #fff;
+        font-size: 0.75rem;
+        font-weight: 500;
+        opacity: 0;
+        transform: translateY(10px);
+        transition: opacity 0.3s, transform 0.3s;
+        z-index: 200;
+        pointer-events: none;
+    }
+    .save-indicator.show {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    /* Reorder arrows */
+    .reorder-arrows {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        display: flex;
+        gap: 2px;
+        z-index: 2;
+    }
+    .reorder-btn {
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-muted);
+        transition: all var(--transition);
+        padding: 0;
+    }
+    .reorder-btn:hover {
+        background: rgba(0,0,0,0.06);
+        color: var(--text-primary);
+    }
+    .machine-card { position: relative; }
+
+    /* Add Machine Modal */
+    .add-machine-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.3);
+        backdrop-filter: blur(8px);
+        z-index: 200;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.25s;
+    }
+    .add-machine-overlay.show {
+        opacity: 1;
+        pointer-events: auto;
+    }
+    .add-machine-modal {
+        background: rgba(255,255,255,0.97);
+        backdrop-filter: blur(40px);
+        border: 1px solid rgba(0,0,0,0.08);
+        border-radius: 16px;
+        padding: 32px 36px;
+        width: 400px;
+        max-width: 90vw;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.12);
+        transform: translateY(10px);
+        transition: transform 0.25s;
+    }
+    .add-machine-overlay.show .add-machine-modal {
+        transform: translateY(0);
+    }
+    .add-machine-modal h3 {
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-bottom: 20px;
+        color: var(--text-primary);
+    }
+    .form-group {
+        margin-bottom: 14px;
+    }
+    .form-group label {
+        display: block;
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 5px;
+    }
+    .form-group input {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid rgba(0,0,0,0.1);
+        border-radius: 10px;
+        font-size: 0.88rem;
+        font-family: inherit;
+        color: var(--text-primary);
+        background: rgba(0,0,0,0.02);
+        outline: none;
+        transition: border-color 0.2s;
+    }
+    .form-group input:focus {
+        border-color: rgba(0,0,0,0.25);
+    }
+    .form-actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 20px;
+    }
+    .form-actions button {
+        flex: 1;
+        padding: 10px;
+        border-radius: 10px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        font-family: inherit;
+        cursor: pointer;
+        transition: all var(--transition);
+    }
+    .btn-form-cancel {
+        background: transparent;
+        border: 1px solid rgba(0,0,0,0.1);
+        color: var(--text-secondary);
+    }
+    .btn-form-cancel:hover {
+        background: rgba(0,0,0,0.04);
+    }
+    .btn-form-submit {
+        background: var(--text-primary);
+        border: none;
+        color: #fff;
+    }
+    .btn-form-submit:hover {
+        opacity: 0.85;
+    }
+
+    /* Add machine button in header */
+    .btn-add-machine {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 16px;
+        border-radius: 10px;
+        border: 1px solid rgba(0,0,0,0.1);
+        background: transparent;
+        font-size: 0.78rem;
+        font-weight: 600;
+        font-family: inherit;
+        color: var(--text-secondary);
+        cursor: pointer;
+        transition: all var(--transition);
+    }
+    .btn-add-machine:hover {
+        background: rgba(0,0,0,0.04);
+        border-color: rgba(0,0,0,0.2);
+        color: var(--text-primary);
+    }
+    .health-header-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+    }
+
+    /* Delete in inspector */
+    .btn-delete-machine {
+        width: 100%;
+        padding: 10px;
+        border-radius: 10px;
+        border: 1px solid rgba(200,0,0,0.15);
+        background: transparent;
+        font-size: 0.78rem;
+        font-weight: 600;
+        font-family: inherit;
+        color: #c00;
+        cursor: pointer;
+        transition: all var(--transition);
+        margin-top: 12px;
+    }
+    .btn-delete-machine:hover {
+        background: rgba(200,0,0,0.06);
+    }
+
+    @media (max-width: 900px) {
+        .inspector-panel { width: 100vw; }
+        .health-main.inspector-open { margin-right: 0; }
+    }
+    @media (max-width: 640px) {
+        .machine-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{% csrf_token %}
+
+<div class="health-page-layout">
+<div class="health-main" id="healthMain">
+
+<!-- Header -->
+<div class="health-header">
+    <div class="health-header-row">
+        <div>
+            <div class="health-title">Machine Health & Predictive Maintenance</div>
+            <div class="health-subtitle">Weibull Failure Analysis &mdash; Real-Time Equipment Monitoring</div>
+        </div>
+        <button class="btn-add-machine" onclick="window._healthPage.showAddModal()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Machine
+        </button>
+    </div>
+</div>
+
+<!-- Add Machine Modal -->
+<div class="add-machine-overlay" id="addMachineOverlay" onclick="if(event.target===this) window._healthPage.hideAddModal()">
+    <div class="add-machine-modal">
+        <h3>Add Machine to Pipeline</h3>
+        <div class="form-group">
+            <label>Machine Name</label>
+            <input type="text" id="newMachineName" placeholder="e.g. Laser Cutter">
+        </div>
+        <div class="form-group">
+            <label>Machine ID (optional)</label>
+            <input type="text" id="newMachineId" placeholder="e.g. MCH-LC-06">
+        </div>
+        <div class="form-group">
+            <label>Failure Threshold</label>
+            <input type="number" id="newMachineThreshold" value="10" min="5">
+        </div>
+        <div class="form-actions">
+            <button class="btn-form-cancel" onclick="window._healthPage.hideAddModal()">Cancel</button>
+            <button class="btn-form-submit" onclick="window._healthPage.submitAddMachine()">Add Machine</button>
+        </div>
+    </div>
+</div>
+
+<!-- Overall System Health -->
+<div class="system-health-bar-container glass">
+    <div class="system-health-label">
+        <span>Overall System Health</span>
+        <span class="system-health-pct" id="systemHealthPct">--</span>
+    </div>
+    <div class="system-bar-track">
+        <div class="system-bar-fill" id="systemBarFill" style="width: 0%;"></div>
+    </div>
+</div>
+
+<!-- Machine Cards -->
+<div class="machine-grid" id="machineGrid"></div>
+
+</div><!-- /health-main -->
+
+<!-- Inspector Panel (right side) -->
+<div class="inspector-panel" id="inspectorPanel">
+    <button class="inspector-close" onclick="window._healthPage.closeInspector()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+    <div id="inspectorContent"></div>
+</div>
+
+<div class="save-indicator" id="saveIndicator">Saved</div>
+
+</div><!-- /health-page-layout -->
+
+<script>
+(function() {
+    var machines = JSON.parse('{{ machines_json|escapejs }}');
+    var CIRCUMFERENCE = 2 * Math.PI * 54;
+    var selectedMachineId = null;
+    var saveTimer = null;
+    var inspectorDirty = false;
+
+    function getMachineDescription(m) {
+        var dd = m.detail_data || {};
+        var pc = dd.pipeline_config || {};
+        return pc.description || '';
+    }
+
+    function getCsrfToken() {
+        var el = document.querySelector('[name=csrfmiddlewaretoken]');
+        return el ? el.value : '';
+    }
+
+    function getGaugeStroke(health) {
+        if (health >= 80) return '#1A1A1A';
+        if (health >= 60) return '#4A4A4A';
+        if (health >= 40) return '#7A7A7A';
+        if (health >= 20) return '#555';
+        return '#2a0a0a';
+    }
+
+    function getStatusClass(status) {
+        switch (status) {
+            case 'Operational': return 'status-operational';
+            case 'Wear Detected': return 'status-wear';
+            case 'Maintenance Recommended': return 'status-maintenance';
+            case 'Critical': return 'status-critical';
+            default: return 'status-operational';
+        }
+    }
+
+    function getResourceIcon(type) {
+        if (type === 'droplet') return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg>';
+        if (type === 'thermometer') return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></svg>';
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>';
+    }
+
+    function getMachineIllustration(machineId) {
+        var svgs = {
+            'MCH-UL-01': '<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="16" cy="24" r="10"/><circle cx="16" cy="24" r="4"/><path d="M26 24h16"/><path d="M26 20h16"/><path d="M26 28h16"/></svg>',
+            'MCH-SC-02': '<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 8l16 16"/><path d="M8 8l8 0v8"/><path d="M40 40l-16-16"/><path d="M40 40l-8 0v-8"/><path d="M4 36h40"/></svg>',
+            'MCH-PB-03': '<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="6" width="36" height="8" rx="2"/><path d="M24 14v10"/><path d="M16 24h16"/><path d="M8 32h32"/><path d="M8 32l8-8"/><path d="M40 32l-8-8"/><rect x="6" y="36" width="36" height="6" rx="2"/></svg>',
+            'MCH-WJ-04': '<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M24 6v20"/><path d="M20 26l4 8 4-8"/><circle cx="24" cy="38" r="4"/><path d="M12 38h8"/><path d="M28 38h8"/><path d="M18 10l-6 6"/><path d="M30 10l6 6"/></svg>',
+            'MCH-QC-05': '<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="20" cy="20" r="12"/><circle cx="20" cy="20" r="5"/><path d="M29 29l12 12"/><path d="M10 38h4"/><path d="M36 38h4"/></svg>'
+        };
+        var genericSvg = '<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="10" y="16" width="28" height="22" rx="3"/><circle cx="24" cy="10" r="6"/><path d="M24 4v12"/><path d="M18 10h12"/><path d="M16 27h16"/><path d="M16 33h10"/></svg>';
+        return svgs[machineId] || genericSvg;
+    }
+
+    function updateGauge(cardEl, healthPercent) {
+        var circle = cardEl.querySelector('.health-gauge-circle');
+        var offset = CIRCUMFERENCE * (1 - healthPercent / 100);
+        circle.style.strokeDashoffset = offset;
+        circle.style.stroke = getGaugeStroke(healthPercent);
+        var pctEl = cardEl.querySelector('.gauge-pct');
+        pctEl.textContent = healthPercent.toFixed(1);
+    }
+
+    function getDetailData(machineId) {
+        var m = machines.find(function(x) { return x.machine_id === machineId; });
+        return (m && m.detail_data) ? m.detail_data : {};
+    }
+
+    function showSaveIndicator() {
+        var el = document.getElementById('saveIndicator');
+        el.classList.add('show');
+        clearTimeout(el._hideTimer);
+        el._hideTimer = setTimeout(function() { el.classList.remove('show'); }, 1500);
+    }
+
+    function saveDetailData(machineId, detailData) {
+        // Update local cache
+        var m = machines.find(function(x) { return x.machine_id === machineId; });
+        if (m) m.detail_data = detailData;
+
+        // Debounce save
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(function() {
+            fetch('/api/update-machine-detail/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                body: JSON.stringify({ machine_id: machineId, detail_data: detailData })
+            })
+            .then(function(res) { return res.json(); })
+            .then(function() { showSaveIndicator(); inspectorDirty = false; })
+            .catch(function(err) { console.error('Save detail error:', err); });
+        }, 600);
+    }
+
+    // Collect current inspector state from DOM into detail_data object
+    function collectInspectorData(machineId) {
+        var panel = document.getElementById('inspectorContent');
+        var detail = JSON.parse(JSON.stringify(getDetailData(machineId)));
+
+        // Resources
+        var resourceSliders = panel.querySelectorAll('.resource-slider');
+        var resourceNames = panel.querySelectorAll('.resource-name-input');
+        if (detail.resources && resourceSliders.length) {
+            detail.resources = [];
+            resourceSliders.forEach(function(slider, i) {
+                var nameInput = resourceNames[i];
+                var iconSelect = panel.querySelectorAll('.resource-icon-select')[i];
+                detail.resources.push({
+                    name: nameInput ? nameInput.value : '',
+                    level: parseInt(slider.value, 10),
+                    icon: iconSelect ? iconSelect.value : 'gauge'
+                });
+            });
+        }
+
+        // Equipment details
+        var pdInput = panel.querySelector('[data-field="purchaseDate"]');
+        if (pdInput) detail.purchaseDate = pdInput.value;
+        var thInput = panel.querySelector('[data-field="totalHours"]');
+        if (thInput) detail.totalHours = parseInt(thInput.value, 10) || 0;
+        var wlInput = panel.querySelector('[data-field="wearLevel"]');
+        if (wlInput) detail.wearLevel = parseInt(wlInput.value, 10) || 0;
+        var dyInput = panel.querySelector('[data-field="depreciationYears"]');
+        if (dyInput) detail.depreciationYears = parseInt(dyInput.value, 10) || 1;
+
+        // Parts
+        var partInputs = panel.querySelectorAll('.part-input');
+        detail.partsChanged = [];
+        partInputs.forEach(function(inp) {
+            var v = inp.value.trim();
+            if (v) detail.partsChanged.push(v);
+        });
+
+        // Maintenance log
+        var maintBlocks = panel.querySelectorAll('.maint-edit-block');
+        detail.maintenanceLog = [];
+        maintBlocks.forEach(function(block) {
+            var dateIn = block.querySelector('.maint-date-input');
+            var typeIn = block.querySelector('.maint-type-select');
+            var descIn = block.querySelector('.maint-desc-input');
+            var costIn = block.querySelector('.maint-cost-input');
+            detail.maintenanceLog.push({
+                date: dateIn ? dateIn.value : '',
+                type: typeIn ? typeIn.value : 'Preventive',
+                desc: descIn ? descIn.value : '',
+                cost: costIn ? (parseFloat(costIn.value) || 0) : 0
+            });
+        });
+
+        return detail;
+    }
+
+    function onInspectorChange(machineId) {
+        inspectorDirty = true;
+        var data = collectInspectorData(machineId);
+        saveDetailData(machineId, data);
+    }
+
+    function renderMachines() {
+        var grid = document.getElementById('machineGrid');
+        grid.innerHTML = '';
+        var total = machines.length;
+
+        machines.forEach(function(m, idx) {
+            var offset = CIRCUMFERENCE * (1 - m.health / 100);
+            var strokeColor = getGaugeStroke(m.health);
+            var statusClass = getStatusClass(m.status);
+            var desc = getMachineDescription(m);
+
+            var arrowUp = idx > 0 ?
+                '<button class="reorder-btn" onclick="event.stopPropagation();window._healthPage.reorderMachine(\'' + m.machine_id + '\',\'up\')" title="Move up">' +
+                    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="18 15 12 9 6 15"/></svg>' +
+                '</button>' : '';
+            var arrowDown = idx < total - 1 ?
+                '<button class="reorder-btn" onclick="event.stopPropagation();window._healthPage.reorderMachine(\'' + m.machine_id + '\',\'down\')" title="Move down">' +
+                    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>' +
+                '</button>' : '';
+
+            var card = document.createElement('div');
+            card.className = 'machine-card glass' + (selectedMachineId === m.machine_id ? ' card-selected' : '');
+            card.setAttribute('data-machine-id', m.machine_id);
+            card.onclick = function(e) {
+                if (e.target.closest('.threshold-slider') || e.target.closest('.btn-maintenance') || e.target.closest('.reorder-btn')) return;
+                openInspector(m.machine_id);
+            };
+            card.innerHTML =
+                '<div class="reorder-arrows">' + arrowUp + arrowDown + '</div>' +
+                '<div class="machine-illustration">' + getMachineIllustration(m.machine_id) + '</div>' +
+                '<div class="gauge-wrapper">' +
+                    '<svg width="120" height="120" viewBox="0 0 120 120">' +
+                        '<circle class="health-gauge-bg" cx="60" cy="60" r="54"/>' +
+                        '<circle class="health-gauge-circle" cx="60" cy="60" r="54"' +
+                            ' stroke-dasharray="' + CIRCUMFERENCE + '"' +
+                            ' stroke-dashoffset="' + offset + '"' +
+                            ' style="stroke:' + strokeColor + '"/>' +
+                    '</svg>' +
+                    '<div class="gauge-text">' +
+                        '<div class="gauge-pct">' + m.health.toFixed(1) + '</div>' +
+                        '<div class="gauge-pct-sign">%</div>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="machine-name">' + m.machine_name + '</div>' +
+                '<div class="machine-id">' + m.machine_id + '</div>' +
+                (desc ? '<div class="machine-desc">' + desc + '</div>' : '') +
+                '<span class="status-badge ' + statusClass + '">' + m.status + '</span>' +
+                '<div class="machine-stats">' +
+                    '<div class="stat-row">' +
+                        '<span class="stat-label">Usage</span>' +
+                        '<span class="stat-value usage-val">' + m.usage_count + ' / ' + m.failure_threshold + ' cycles</span>' +
+                    '</div>' +
+                    '<div class="stat-row">' +
+                        '<span class="stat-label">Failure Probability</span>' +
+                        '<span class="stat-value fp-val">' + m.failure_prob.toFixed(1) + '%</span>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="card-divider"></div>' +
+                '<div class="threshold-section">' +
+                    '<div class="threshold-label">' +
+                        '<span>Failure Threshold</span>' +
+                        '<strong class="thresh-display">' + m.failure_threshold + '</strong>' +
+                    '</div>' +
+                    '<input type="range" class="threshold-slider" min="5" max="2000" step="5"' +
+                        ' value="' + m.failure_threshold + '"' +
+                        ' oninput="this.closest(\'.machine-card\').querySelector(\'.thresh-display\').textContent=this.value"' +
+                        ' onchange="window._healthPage.updateThreshold(\'' + m.machine_id + '\', this.value)">' +
+                '</div>' +
+                '<button class="btn-maintenance"' +
+                    ' onclick="window._healthPage.resetMachine(\'' + m.machine_id + '\')">' +
+                    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>' +
+                    'Run Maintenance' +
+                '</button>';
+
+            grid.appendChild(card);
+        });
+
+        updateSystemHealth();
+    }
+
+    function updateSystemHealth() {
+        if (!machines.length) return;
+        var sum = 0;
+        machines.forEach(function(m) { sum += m.health; });
+        var avg = sum / machines.length;
+        document.getElementById('systemHealthPct').textContent = avg.toFixed(1) + '%';
+        document.getElementById('systemBarFill').style.width = avg + '%';
+    }
+
+    function updateCardsFromData(data) {
+        // Merge detail_data from poll into local machines
+        data.forEach(function(newM) {
+            var existing = machines.find(function(x) { return x.machine_id === newM.machine_id; });
+            if (existing) {
+                // Don't overwrite detail_data if inspector is dirty (user is editing)
+                var preserveDetail = inspectorDirty && selectedMachineId === newM.machine_id;
+                var savedDetail = existing.detail_data;
+                Object.assign(existing, newM);
+                if (preserveDetail) existing.detail_data = savedDetail;
+            }
+        });
+        machines = machines.length ? machines : data;
+
+        data.forEach(function(m) {
+            var card = document.querySelector('[data-machine-id="' + m.machine_id + '"]');
+            if (!card) return;
+
+            updateGauge(card, m.health);
+            card.querySelector('.usage-val').textContent = m.usage_count + ' / ' + m.failure_threshold + ' cycles';
+            card.querySelector('.fp-val').textContent = m.failure_prob.toFixed(1) + '%';
+
+            var badge = card.querySelector('.status-badge');
+            badge.className = 'status-badge ' + getStatusClass(m.status);
+            badge.textContent = m.status;
+
+            card.querySelector('.thresh-display').textContent = m.failure_threshold;
+
+            var slider = card.querySelector('.threshold-slider');
+            if (document.activeElement !== slider) {
+                slider.value = m.failure_threshold;
+            }
+        });
+        updateSystemHealth();
+
+        // Update inspector health info only (not editable fields) if open & not dirty
+        if (selectedMachineId && !inspectorDirty) {
+            renderInspectorContent(selectedMachineId);
+        }
+    }
+
+    function pollHealth() {
+        fetch('/api/machine-health-data/')
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                var list = (data && data.machines) ? data.machines : data;
+                if (list && Array.isArray(list)) {
+                    updateCardsFromData(list);
+                }
+            })
+            .catch(function(err) {
+                console.error('Health poll error:', err);
+            });
+    }
+
+    function updateThreshold(machineId, value) {
+        fetch('/api/update-failure-threshold/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+            body: JSON.stringify({ machine_id: machineId, threshold: parseInt(value, 10) })
+        })
+        .then(function(res) { return res.json(); })
+        .then(function() { pollHealth(); })
+        .catch(function(err) { console.error('Threshold update error:', err); });
+    }
+
+    function resetMachine(machineId) {
+        fetch('/api/reset-machine/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+            body: JSON.stringify({ machine_id: machineId })
+        })
+        .then(function(res) { return res.json(); })
+        .then(function() { pollHealth(); })
+        .catch(function(err) { console.error('Reset error:', err); });
+    }
+
+    // ---- Inspector Panel (Editable) ----
+
+    function openInspector(machineId) {
+        selectedMachineId = machineId;
+        inspectorDirty = false;
+        document.querySelectorAll('.machine-card').forEach(function(c) {
+            c.classList.toggle('card-selected', c.getAttribute('data-machine-id') === machineId);
+        });
+        renderInspectorContent(machineId);
+        document.getElementById('inspectorPanel').classList.add('open');
+        document.getElementById('healthMain').classList.add('inspector-open');
+    }
+
+    function closeInspector() {
+        selectedMachineId = null;
+        inspectorDirty = false;
+        document.getElementById('inspectorPanel').classList.remove('open');
+        document.getElementById('healthMain').classList.remove('inspector-open');
+        document.querySelectorAll('.machine-card.card-selected').forEach(function(c) {
+            c.classList.remove('card-selected');
+        });
+    }
+
+    function escHtml(str) {
+        var d = document.createElement('div');
+        d.textContent = str;
+        return d.innerHTML;
+    }
+
+    function renderInspectorContent(machineId) {
+        var m = machines.find(function(x) { return x.machine_id === machineId; });
+        var detail = getDetailData(machineId);
+        if (!m) return;
+
+        var desc = getMachineDescription(m);
+        var isOnline = m.health > 0;
+        var statusText = isOnline ? 'Online \u2014 Active' : 'Offline \u2014 Maintenance Required';
+
+        var resources = (detail.resources || []);
+        var partsChanged = (detail.partsChanged || []);
+        var maintenanceLog = (detail.maintenanceLog || []);
+        var purchaseDate = detail.purchaseDate || '';
+        var totalHours = detail.totalHours || 0;
+        var wearLevel = detail.wearLevel || 0;
+        var depYears = detail.depreciationYears || 1;
+
+        var purchaseYear = purchaseDate ? parseInt(purchaseDate.split('-')[0]) : 2020;
+        var age = 2026 - purchaseYear;
+        var depPct = Math.min(100, Math.round((age / depYears) * 100));
+
+        var chg = 'window._healthPage.onInspectorChange(\'' + machineId + '\')';
+
+        var html =
+            '<div class="inspector-machine-name">' + escHtml(m.machine_name) + '</div>' +
+            '<div class="inspector-machine-id">' + escHtml(machineId) + ' &mdash; ' + escHtml(desc) + '</div>' +
+
+            '<div class="active-status">' +
+                '<div class="active-dot ' + (isOnline ? 'online' : 'offline') + '"></div>' +
+                '<div>' +
+                    '<div class="active-text">' + escHtml(statusText) + '</div>' +
+                    '<div class="active-sub">Health: ' + m.health.toFixed(1) + '% &middot; Failure prob: ' + m.failure_prob.toFixed(1) + '%</div>' +
+                '</div>' +
+            '</div>' +
+
+            '<div class="inspector-divider"></div>' +
+
+            // ── Resource Levels (editable sliders) ──
+            '<div class="inspector-section">' +
+                '<div class="inspector-section-title">Resource Levels</div>' +
+                resources.map(function(r, i) {
+                    return '<div class="resource-row" style="flex-wrap:wrap;gap:6px;">' +
+                        '<div class="resource-icon">' + getResourceIcon(r.icon) + '</div>' +
+                        '<div class="resource-info" style="flex:1;min-width:0;">' +
+                            '<input type="text" class="editable-input small resource-name-input" value="' + escHtml(r.name) + '" onchange="' + chg + '" style="margin-bottom:4px;">' +
+                            '<input type="range" class="resource-slider" min="0" max="100" value="' + r.level + '"' +
+                                ' oninput="this.closest(\'.resource-row\').querySelector(\'.resource-pct\').textContent=this.value+\'%\'"' +
+                                ' onchange="' + chg + '">' +
+                        '</div>' +
+                        '<div class="resource-pct">' + r.level + '%</div>' +
+                        '<select class="resource-icon-select" onchange="' + chg + '" style="font-size:0.7rem;padding:2px 4px;border:1px solid rgba(0,0,0,0.08);border-radius:6px;background:rgba(0,0,0,0.02);display:none;">' +
+                            '<option value="droplet"' + (r.icon === 'droplet' ? ' selected' : '') + '>Droplet</option>' +
+                            '<option value="thermometer"' + (r.icon === 'thermometer' ? ' selected' : '') + '>Thermo</option>' +
+                            '<option value="gauge"' + (r.icon === 'gauge' ? ' selected' : '') + '>Gauge</option>' +
+                        '</select>' +
+                    '</div>';
+                }).join('') +
+                '<button class="btn-add" onclick="window._healthPage.addResource(\'' + machineId + '\')">' +
+                    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>' +
+                    'Add Resource' +
+                '</button>' +
+            '</div>' +
+
+            '<div class="inspector-divider"></div>' +
+
+            // ── Equipment Details (editable inputs) ──
+            '<div class="inspector-section">' +
+                '<div class="inspector-section-title">Equipment Details</div>' +
+                '<div class="info-grid">' +
+                    '<div class="info-item">' +
+                        '<div class="info-item-label">Purchase Date</div>' +
+                        '<input type="date" class="editable-input small" data-field="purchaseDate" value="' + escHtml(purchaseDate) + '" onchange="' + chg + '">' +
+                    '</div>' +
+                    '<div class="info-item">' +
+                        '<div class="info-item-label">Total Hours</div>' +
+                        '<input type="number" class="editable-input small" data-field="totalHours" value="' + totalHours + '" onchange="' + chg + '">' +
+                    '</div>' +
+                    '<div class="info-item">' +
+                        '<div class="info-item-label">Wear Level (%)</div>' +
+                        '<input type="number" class="editable-input small" data-field="wearLevel" value="' + wearLevel + '" min="0" max="100" onchange="' + chg + '">' +
+                    '</div>' +
+                    '<div class="info-item">' +
+                        '<div class="info-item-label">Depreciation (yrs)</div>' +
+                        '<input type="number" class="editable-input small" data-field="depreciationYears" value="' + depYears + '" min="1" onchange="' + chg + '">' +
+                    '</div>' +
+                    '<div class="info-item">' +
+                        '<div class="info-item-label">Usage Cycles</div>' +
+                        '<div class="info-item-value">' + m.usage_count + ' / ' + m.failure_threshold + '</div>' +
+                    '</div>' +
+                    '<div class="info-item">' +
+                        '<div class="info-item-label">Status</div>' +
+                        '<div class="info-item-value">' + escHtml(m.status) + '</div>' +
+                    '</div>' +
+                '</div>' +
+            '</div>' +
+
+            '<div class="inspector-divider"></div>' +
+
+            // ── Parts Replaced (editable list) ──
+            '<div class="inspector-section">' +
+                '<div class="inspector-section-title">Parts Replaced</div>' +
+                partsChanged.map(function(p, i) {
+                    return '<div class="part-edit-row">' +
+                        '<span class="parts-dot"></span>' +
+                        '<input type="text" class="editable-input small part-input" value="' + escHtml(p) + '" onchange="' + chg + '">' +
+                        '<button class="btn-icon danger" onclick="window._healthPage.removePart(\'' + machineId + '\',' + i + ')" title="Remove">' +
+                            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
+                        '</button>' +
+                    '</div>';
+                }).join('') +
+                '<button class="btn-add" onclick="window._healthPage.addPart(\'' + machineId + '\')">' +
+                    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>' +
+                    'Add Part' +
+                '</button>' +
+            '</div>' +
+
+            '<div class="inspector-divider"></div>' +
+
+            // ── Maintenance History (editable entries) ──
+            '<div class="inspector-section">' +
+                '<div class="inspector-section-title">Maintenance History</div>' +
+                maintenanceLog.map(function(entry, i) {
+                    return '<div class="maint-edit-block">' +
+                        '<div class="maint-edit-row">' +
+                            '<input type="date" class="editable-input small maint-date-input" value="' + escHtml(entry.date) + '" onchange="' + chg + '">' +
+                            '<select class="maint-type-select" onchange="' + chg + '">' +
+                                '<option value="Preventive"' + (entry.type === 'Preventive' ? ' selected' : '') + '>Preventive</option>' +
+                                '<option value="Corrective"' + (entry.type === 'Corrective' ? ' selected' : '') + '>Corrective</option>' +
+                            '</select>' +
+                            '<button class="btn-icon danger" onclick="window._healthPage.removeMaint(\'' + machineId + '\',' + i + ')" title="Remove">' +
+                                '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
+                            '</button>' +
+                        '</div>' +
+                        '<input type="text" class="editable-input small maint-desc-input" value="' + escHtml(entry.desc) + '" placeholder="Description" onchange="' + chg + '" style="margin-bottom:4px;">' +
+                        '<div class="maint-edit-row">' +
+                            '<span style="font-size:0.72rem;color:var(--text-muted);flex-shrink:0;">Cost $</span>' +
+                            '<input type="number" class="editable-input small maint-cost-input" value="' + (entry.cost || 0) + '" onchange="' + chg + '" style="width:100px;">' +
+                        '</div>' +
+                    '</div>';
+                }).join('') +
+                '<button class="btn-add" onclick="window._healthPage.addMaint(\'' + machineId + '\')">' +
+                    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>' +
+                    'Add Entry' +
+                '</button>' +
+            '</div>' +
+
+            '<div class="inspector-divider"></div>' +
+            '<button class="btn-delete-machine" onclick="window._healthPage.deleteMachine(\'' + machineId + '\')">' +
+                'Delete Machine' +
+            '</button>';
+
+        document.getElementById('inspectorContent').innerHTML = html;
+    }
+
+    // ---- Add / Remove helpers ----
+
+    function addResource(machineId) {
+        var data = collectInspectorData(machineId);
+        data.resources.push({ name: 'New Resource', level: 100, icon: 'gauge' });
+        saveDetailData(machineId, data);
+        renderInspectorContent(machineId);
+    }
+
+    function addPart(machineId) {
+        var data = collectInspectorData(machineId);
+        data.partsChanged.push('New part (' + new Date().getFullYear() + ')');
+        saveDetailData(machineId, data);
+        renderInspectorContent(machineId);
+    }
+
+    function removePart(machineId, idx) {
+        var data = collectInspectorData(machineId);
+        data.partsChanged.splice(idx, 1);
+        saveDetailData(machineId, data);
+        renderInspectorContent(machineId);
+    }
+
+    function addMaint(machineId) {
+        var data = collectInspectorData(machineId);
+        var today = new Date().toISOString().split('T')[0];
+        data.maintenanceLog.unshift({ date: today, type: 'Preventive', desc: '', cost: 0 });
+        saveDetailData(machineId, data);
+        renderInspectorContent(machineId);
+    }
+
+    function removeMaint(machineId, idx) {
+        var data = collectInspectorData(machineId);
+        data.maintenanceLog.splice(idx, 1);
+        saveDetailData(machineId, data);
+        renderInspectorContent(machineId);
+    }
+
+    // ---- Add / Delete / Reorder Machine ----
+
+    function showAddModal() {
+        document.getElementById('addMachineOverlay').classList.add('show');
+        document.getElementById('newMachineName').focus();
+    }
+
+    function hideAddModal() {
+        document.getElementById('addMachineOverlay').classList.remove('show');
+        document.getElementById('newMachineName').value = '';
+        document.getElementById('newMachineId').value = '';
+        document.getElementById('newMachineThreshold').value = '10';
+    }
+
+    function submitAddMachine() {
+        var name = document.getElementById('newMachineName').value.trim();
+        var id = document.getElementById('newMachineId').value.trim();
+        var threshold = parseInt(document.getElementById('newMachineThreshold').value, 10) || 10;
+        if (!name) { document.getElementById('newMachineName').focus(); return; }
+        fetch('/api/add-machine/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+            body: JSON.stringify({ machine_name: name, machine_id: id, failure_threshold: threshold })
+        })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            if (data.success && data.machine) {
+                machines.push(data.machine);
+                renderMachines();
+                hideAddModal();
+            } else {
+                alert(data.error || 'Failed to add machine');
+            }
+        })
+        .catch(function(err) { console.error('Add machine error:', err); });
+    }
+
+    function deleteMachine(machineId) {
+        if (!confirm('Delete this machine from the pipeline? This cannot be undone.')) return;
+        fetch('/api/delete-machine/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+            body: JSON.stringify({ machine_id: machineId })
+        })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            if (data.success) {
+                machines = machines.filter(function(m) { return m.machine_id !== machineId; });
+                if (selectedMachineId === machineId) closeInspector();
+                renderMachines();
+            } else {
+                alert(data.error || 'Failed to delete');
+            }
+        })
+        .catch(function(err) { console.error('Delete error:', err); });
+    }
+
+    function reorderMachine(machineId, direction) {
+        fetch('/api/reorder-machines/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+            body: JSON.stringify({ machine_id: machineId, direction: direction })
+        })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            if (data.success) {
+                // Re-fetch to get correct order
+                pollHealth();
+                // Optimistic local swap
+                var idx = machines.findIndex(function(m) { return m.machine_id === machineId; });
+                var swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+                if (idx >= 0 && swapIdx >= 0 && swapIdx < machines.length) {
+                    var temp = machines[idx];
+                    machines[idx] = machines[swapIdx];
+                    machines[swapIdx] = temp;
+                    renderMachines();
+                }
+            }
+        })
+        .catch(function(err) { console.error('Reorder error:', err); });
+    }
+
+    // Expose functions
+    window._healthPage = {
+        updateThreshold: updateThreshold,
+        resetMachine: resetMachine,
+        closeInspector: closeInspector,
+        onInspectorChange: onInspectorChange,
+        addResource: addResource,
+        addPart: addPart,
+        removePart: removePart,
+        addMaint: addMaint,
+        removeMaint: removeMaint,
+        showAddModal: showAddModal,
+        hideAddModal: hideAddModal,
+        submitAddMachine: submitAddMachine,
+        deleteMachine: deleteMachine,
+        reorderMachine: reorderMachine
+    };
+
+    // Initial render
+    renderMachines();
+
+    // Poll every 3 seconds
+    setInterval(pollHealth, 3000);
+})();
+</script>
+{% endblock %}

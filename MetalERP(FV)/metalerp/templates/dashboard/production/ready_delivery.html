@@ -1,0 +1,401 @@
+{% extends "base_production.html" %}
+{% load static %}
+
+{% block title %}Stremet — Ready for Delivery{% endblock %}
+
+{% block ui_content %}
+<div class="op-page-content">
+    <div class="op-page-header">
+        <h1 class="op-page-title">Ready for Delivery</h1>
+        <span class="ps-count-badge">{{ orders|length }} order{{ orders|length|pluralize }}</span>
+    </div>
+
+    <div class="ps-table-wrap">
+        <table class="ps-table">
+            <thead>
+                <tr>
+                    <th>Order ID</th>
+                    <th>Product</th>
+                    <th>Material</th>
+                    <th>Manufacturer</th>
+                    <th>Dimensions</th>
+                    <th>Time</th>
+                    <th>Energy</th>
+                    <th>Created</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in orders %}
+                <tr class="ps-order-row" onclick="toggleOrderDetail(this)">
+                    <td class="ps-cell-mono">{{ item.order.order_id }}</td>
+                    <td>{{ item.order.product }}</td>
+                    <td>{{ item.order.material_name }}</td>
+                    <td>{{ item.order.manufacturer }}</td>
+                    <td>{{ item.order.dimensions }}</td>
+                    <td>{{ item.order.processing_time|floatformat:1 }}s</td>
+                    <td>{{ item.order.total_energy|floatformat:2 }} kWh</td>
+                    <td class="ps-cell-time">{{ item.order.created_at|date:"M d, H:i" }}</td>
+                    <td>
+                        {% if item.stored_on_shelf %}
+                        <span class="ps-badge ps-badge-stored" title="Stored on {{ item.stored_on_shelf.shelf_id }} in {{ item.stored_on_shelf.warehouse.name }}">Stored</span>
+                        {% else %}
+                        <button class="ps-store-btn" onclick="event.stopPropagation(); openStoreModal('{{ item.order.order_id }}', '{{ item.order.product|escapejs }}')">Store</button>
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr class="ps-order-detail" style="display: none;">
+                    <td colspan="9">
+                        <div class="ps-detail-content ps-history-panel">
+
+                            {% if item.stored_on_shelf %}
+                            <div class="ps-detail-section" style="background: rgba(34,197,94,0.06); border: 1px solid rgba(34,197,94,0.15); border-radius: 8px; padding: 12px 16px;">
+                                <h4 class="ps-detail-title" style="color: #16a34a;">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                                    Stored as Finished Goods
+                                </h4>
+                                <div class="ps-detail-grid ps-detail-grid-3">
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Warehouse</span><span class="ps-detail-val">{{ item.stored_on_shelf.warehouse.name }}</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Shelf</span><span class="ps-detail-val ps-cell-mono">{{ item.stored_on_shelf.shelf_id }}</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Stored At</span><span class="ps-detail-val">{{ item.stored_on_shelf.stored_at|date:"M d, H:i" }}</span></div>
+                                </div>
+                            </div>
+                            {% endif %}
+
+                            {% if item.delivery_info %}
+                            <div class="ps-detail-section">
+                                <h4 class="ps-detail-title">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+                                    Supply Chain Origin
+                                </h4>
+                                <div class="ps-detail-grid ps-detail-grid-3">
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Delivery Batch</span><span class="ps-detail-val ps-cell-mono">{{ item.delivery_info.batch_id }}</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Supplier</span><span class="ps-detail-val">{{ item.delivery_info.manufacturer }}</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Material</span><span class="ps-detail-val">{{ item.delivery_info.material_name }}</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Source Warehouse</span><span class="ps-detail-val">{{ item.delivery_info.warehouse_name }} ({{ item.delivery_info.warehouse_code }})</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Source Shelf</span><span class="ps-detail-val ps-cell-mono">{{ item.delivery_info.shelf_id }}</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Delivery Date</span><span class="ps-detail-val">{{ item.delivery_info.date|date:"M d, Y" }}</span></div>
+                                </div>
+                            </div>
+                            {% endif %}
+
+                            <div class="ps-detail-section">
+                                <h4 class="ps-detail-title">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2"/><path d="M12 21v2"/><path d="M4.22 4.22l1.42 1.42"/><path d="M18.36 18.36l1.42 1.42"/><path d="M1 12h2"/><path d="M21 12h2"/></svg>
+                                    Production Details
+                                </h4>
+                                <div class="ps-detail-grid ps-detail-grid-3">
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Order ID</span><span class="ps-detail-val ps-cell-mono">{{ item.order.order_id }}</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Product</span><span class="ps-detail-val">{{ item.order.product }}</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Dimensions</span><span class="ps-detail-val">{{ item.order.dimensions|default:"—" }}</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Processing Time</span><span class="ps-detail-val">{{ item.order.processing_time|floatformat:1 }}s</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Total Energy</span><span class="ps-detail-val">{{ item.order.total_energy|floatformat:1 }} kWh</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Stages</span><span class="ps-detail-val">{{ item.order.stages_completed }}/5</span></div>
+                                </div>
+                            </div>
+
+                            {% if item.scraps %}
+                            <div class="ps-detail-section">
+                                <h4 class="ps-detail-title">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                                    Scrap Events ({{ item.scraps|length }})
+                                </h4>
+                                <div class="ps-mini-table-wrap">
+                                    <table class="ps-mini-table">
+                                        <thead><tr><th>Machine</th><th>Machine ID</th><th>Scrap Type</th><th>Rate</th><th>Time</th></tr></thead>
+                                        <tbody>
+                                            {% for s in item.scraps %}
+                                            <tr>
+                                                <td>{{ s.machine_name }}</td>
+                                                <td class="ps-cell-mono">{{ s.machine_id }}</td>
+                                                <td>{{ s.scrap_type }}</td>
+                                                <td>{{ s.scrap_rate|floatformat:2 }}%</td>
+                                                <td>{{ s.created_at|date:"H:i:s" }}</td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            {% endif %}
+
+                            {% if item.timeline %}
+                            <div class="ps-detail-section">
+                                <h4 class="ps-detail-title">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                    Complete Event Timeline
+                                </h4>
+                                <div class="ps-timeline">
+                                    {% for ev in item.timeline %}
+                                    <div class="ps-timeline-item">
+                                        <div class="ps-timeline-dot ps-sev-{{ ev.severity }}"></div>
+                                        <div class="ps-timeline-content">
+                                            <div class="ps-timeline-header">
+                                                <span class="ps-type-badge ps-type-{{ ev.event_type }}">{{ ev.event_type }}</span>
+                                                <span class="ps-timeline-time">{{ ev.timestamp|date:"M d, H:i:s" }}</span>
+                                            </div>
+                                            <div class="ps-timeline-title">{{ ev.title }}</div>
+                                            {% if ev.description %}<div class="ps-timeline-desc">{{ ev.description }}</div>{% endif %}
+                                            <a href="{% url 'dashboard:production_logs' %}?highlight={{ ev.id }}#log-{{ ev.id }}" class="ps-timeline-link">View in logs &rarr;</a>
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endif %}
+
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="9" class="ps-empty">No orders ready for delivery</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Store Modal -->
+<div id="storeModal" class="ps-modal-overlay" style="display:none;">
+    <div class="ps-modal">
+        <div class="ps-modal-header">
+            <h3 class="ps-modal-title">Store Finished Order</h3>
+            <button class="ps-modal-close" onclick="closeStoreModal()">&times;</button>
+        </div>
+        <div class="ps-modal-body">
+            <p class="ps-modal-subtitle" id="storeModalOrder"></p>
+
+            <!-- Step 1: Choose Warehouse -->
+            <div id="storeStep1">
+                <h4 class="ps-detail-title" style="margin-top:12px;">Choose Warehouse</h4>
+                <div class="ps-wh-grid">
+                    {% for wh in warehouses %}
+                    <button class="ps-wh-card" onclick="selectWarehouse({{ wh.id }}, '{{ wh.name|escapejs }}', '{{ wh.code|escapejs }}')">
+                        <div class="ps-wh-name">{{ wh.name }}</div>
+                        <div class="ps-wh-code">{{ wh.code }}</div>
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Step 2: Choose Shelf & Slot -->
+            <div id="storeStep2" style="display:none;">
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+                    <button class="ps-timeline-link" onclick="backToStep1()" style="font-size:0.8rem;">&larr; Back</button>
+                    <span id="storeWhName" style="font-weight:600; font-size:0.85rem;"></span>
+                </div>
+                <div style="display:flex; gap:8px; margin-bottom:12px;">
+                    <input type="text" id="storeShelfInput" placeholder="Shelf ID (e.g. 3-B-2)" class="op-input" style="flex:1;">
+                    <button class="ps-filter-btn" onclick="loadShelfInfo()">Load Shelf</button>
+                </div>
+                <div id="storeShelfInfo"></div>
+            </div>
+
+            <!-- Step 3: Confirm -->
+            <div id="storeStep3" style="display:none;">
+                <div style="text-align:center; padding:20px 0;">
+                    <div style="font-size:2rem; margin-bottom:8px;">&#10003;</div>
+                    <div id="storeConfirmMsg" style="font-size:0.9rem; font-weight:500;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.ps-store-btn {
+    padding: 4px 14px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: #222;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+}
+.ps-store-btn:hover { background: #444; }
+.ps-badge-stored {
+    background: rgba(34,197,94,0.1);
+    color: #16a34a;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 10px;
+}
+.ps-modal-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.ps-modal {
+    background: #fff;
+    border-radius: 14px;
+    width: 460px;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+}
+.ps-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid #eee;
+}
+.ps-modal-title { font-size: 1rem; font-weight: 700; }
+.ps-modal-close { background: none; border: none; font-size: 1.3rem; cursor: pointer; color: #999; }
+.ps-modal-body { padding: 16px 20px 20px; }
+.ps-modal-subtitle { font-size: 0.82rem; color: #666; margin: 0; }
+.ps-wh-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+}
+.ps-wh-card {
+    padding: 14px 12px;
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    background: #fafafa;
+    cursor: pointer;
+    text-align: left;
+}
+.ps-wh-card:hover { border-color: #222; background: #f5f5f5; }
+.ps-wh-name { font-size: 0.82rem; font-weight: 600; color: #333; }
+.ps-wh-code { font-size: 0.7rem; color: #999; margin-top: 2px; }
+.ps-shelf-slots {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+}
+.ps-slot-btn {
+    width: 48px; height: 48px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    background: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #888;
+}
+.ps-slot-btn:hover:not(.occupied):not(.finished) { border-color: #222; background: #f5f5f5; }
+.ps-slot-btn.occupied { background: rgba(59,130,246,0.1); border-color: rgba(59,130,246,0.3); color: #3b82f6; cursor: default; }
+.ps-slot-btn.finished { background: rgba(34,197,94,0.1); border-color: rgba(34,197,94,0.3); color: #16a34a; cursor: default; }
+</style>
+
+<script>
+var storeOrderId = '';
+var storeProductName = '';
+var selectedWarehouseId = null;
+var selectedWarehouseName = '';
+
+function toggleOrderDetail(row) {
+    var detail = row.nextElementSibling;
+    if (detail && detail.classList.contains('ps-order-detail')) {
+        var isOpen = detail.style.display !== 'none';
+        detail.style.display = isOpen ? 'none' : 'table-row';
+        row.classList.toggle('expanded', !isOpen);
+    }
+}
+
+function openStoreModal(orderId, product) {
+    storeOrderId = orderId;
+    storeProductName = product;
+    document.getElementById('storeModalOrder').textContent = orderId + ' — ' + product;
+    document.getElementById('storeStep1').style.display = '';
+    document.getElementById('storeStep2').style.display = 'none';
+    document.getElementById('storeStep3').style.display = 'none';
+    document.getElementById('storeModal').style.display = 'flex';
+}
+function closeStoreModal() {
+    document.getElementById('storeModal').style.display = 'none';
+}
+function selectWarehouse(whId, whName, whCode) {
+    selectedWarehouseId = whId;
+    selectedWarehouseName = whName;
+    document.getElementById('storeWhName').textContent = whName + ' (' + whCode + ')';
+    document.getElementById('storeStep1').style.display = 'none';
+    document.getElementById('storeStep2').style.display = '';
+    document.getElementById('storeShelfInput').value = '';
+    document.getElementById('storeShelfInfo').innerHTML = '';
+}
+function backToStep1() {
+    document.getElementById('storeStep1').style.display = '';
+    document.getElementById('storeStep2').style.display = 'none';
+}
+
+function loadShelfInfo() {
+    var shelfId = document.getElementById('storeShelfInput').value.trim();
+    if (!shelfId) return;
+    var infoDiv = document.getElementById('storeShelfInfo');
+    infoDiv.innerHTML = '<div style="color:#999;font-size:0.8rem;">Loading...</div>';
+    fetch('/api/shelf-info/?shelf_id=' + encodeURIComponent(shelfId))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.error) {
+                infoDiv.innerHTML = '<div style="color:#d44;font-size:0.8rem;">' + data.error + '</div>';
+                return;
+            }
+            var html = '<div style="font-size:0.78rem;color:#666;margin-bottom:6px;">Shelf <strong>' + shelfId + '</strong> — ' + data.percentage + '% occupied</div>';
+            html += '<div class="ps-shelf-slots">';
+            var finishedSlots = data.finished_slots || [];
+            for (var i = 0; i < data.slots_per_shelf; i++) {
+                var isOcc = data.occupied_slots && data.occupied_slots.indexOf(i) !== -1;
+                var isFin = finishedSlots.indexOf(i) !== -1;
+                if (isFin) {
+                    html += '<div class="ps-slot-btn finished" title="Finished order stored">Slot ' + i + '<br>&#x2714;</div>';
+                } else if (isOcc) {
+                    html += '<div class="ps-slot-btn occupied" title="Occupied by delivery">Slot ' + i + '<br>&#x25CF;</div>';
+                } else {
+                    html += '<div class="ps-slot-btn" onclick="storeOnSlot(\'' + shelfId + '\', ' + i + ')" title="Click to store here">Slot ' + i + '<br>Empty</div>';
+                }
+            }
+            html += '</div>';
+            infoDiv.innerHTML = html;
+        })
+        .catch(function() {
+            infoDiv.innerHTML = '<div style="color:#d44;font-size:0.8rem;">Failed to load shelf info</div>';
+        });
+}
+
+function storeOnSlot(shelfId, slotIndex) {
+    fetch('/api/store-finished-order/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]') ?
+                document.querySelector('[name=csrfmiddlewaretoken]').value :
+                (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || ''
+        },
+        body: JSON.stringify({
+            order_id: storeOrderId,
+            warehouse_id: selectedWarehouseId,
+            shelf_id: shelfId,
+            slot_index: slotIndex
+        })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.success) {
+            document.getElementById('storeStep2').style.display = 'none';
+            document.getElementById('storeStep3').style.display = '';
+            document.getElementById('storeConfirmMsg').innerHTML =
+                '<strong>' + storeOrderId + '</strong> stored on shelf <strong>' + shelfId + '</strong> slot ' + slotIndex + '<br>in <strong>' + selectedWarehouseName + '</strong>';
+            setTimeout(function() { location.reload(); }, 1500);
+        } else {
+            alert(data.error || 'Failed to store order');
+        }
+    })
+    .catch(function() { alert('Network error'); });
+}
+</script>
+{% csrf_token %}
+{% endblock %}

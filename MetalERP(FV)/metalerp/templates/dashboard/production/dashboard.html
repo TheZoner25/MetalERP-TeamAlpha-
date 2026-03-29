@@ -1,0 +1,264 @@
+{% extends "base_production.html" %}
+{% load static %}
+
+{% block title %}Stremet — Production Dashboard{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+{% endblock %}
+
+{% block ui_content %}
+<div class="op-dashboard">
+    <div class="op-dashboard-header">
+        <h1 class="op-greeting">
+            <script>
+                (function(){
+                    var h = new Date().getHours();
+                    var g = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+                    document.currentScript.parentElement.textContent = g;
+                })();
+            </script>
+        </h1>
+        <p class="op-date">{{ today|default:"" }}</p>
+    </div>
+
+    <div class="op-metrics-grid" style="grid-template-columns: repeat(3, 1fr);">
+        <div class="op-metric">
+            <div class="op-metric-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg>
+            </div>
+            <div class="op-metric-value">{{ stats.total_orders_today }}</div>
+            <div class="op-metric-label">Orders Today</div>
+            <div class="op-metric-sub">{{ stats.completed_today }} completed &middot; {{ stats.defected_today }} defected</div>
+        </div>
+
+        <div class="op-metric">
+            <div class="op-metric-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </div>
+            <div class="op-metric-value">{{ stats.defect_rate }}%</div>
+            <div class="op-metric-label">Defect Rate</div>
+            <div class="op-metric-sub">{{ stats.quality_pass }} pass &middot; {{ stats.quality_fail }} fail</div>
+        </div>
+
+        <div class="op-metric">
+            <div class="op-metric-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            </div>
+            <div class="op-metric-value">{{ stats.avg_health }}%</div>
+            <div class="op-metric-label">Avg Fleet Health</div>
+            <div class="op-metric-sub">{{ stats.needs_attention }} need attention</div>
+        </div>
+
+        <div class="op-metric">
+            <div class="op-metric-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+            </div>
+            <div class="op-metric-value">{{ stats.scrap_today }}</div>
+            <div class="op-metric-label">Scrap Events</div>
+        </div>
+
+        <div class="op-metric">
+            <div class="op-metric-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+            </div>
+            <div class="op-metric-value">{{ stats.pending_deliveries }}</div>
+            <div class="op-metric-label">Pending Deliveries</div>
+        </div>
+
+        <div class="op-metric">
+            <div class="op-metric-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            </div>
+            <div class="op-metric-value">{{ stats.utilization }}%</div>
+            <div class="op-metric-label">Warehouse Utilization</div>
+        </div>
+    </div>
+
+    <!-- 12-Hour Orders Timeline Chart -->
+    <div class="ps-chart-section">
+        <div class="ps-chart-header">
+            <div>
+                <div class="ps-chart-title">Orders Timeline</div>
+                <div class="ps-chart-subtitle">Last 12 hours &mdash; click any point to view logs</div>
+            </div>
+        </div>
+        <div class="ps-chart-canvas-wrap">
+            <canvas id="ordersTimelineChart"></canvas>
+        </div>
+    </div>
+
+    {% if recent_logs %}
+    <div class="op-recent-activity" style="margin-top: 32px;">
+        <h2 class="op-section-title">Recent Activity</h2>
+        <div class="op-activity-list">
+            {% for log in recent_logs %}
+            <div class="op-activity-item">
+                <div class="op-activity-dot" style="background: {% if log.severity == 'critical' %}#d44{% elif log.severity == 'error' %}#e65{% elif log.severity == 'warning' %}#e90{% else %}#ccc{% endif %};"></div>
+                <div class="op-activity-content">
+                    <span class="op-activity-title">
+                        <span class="ps-type-badge ps-type-{{ log.event_type }}">{{ log.event_type }}</span>
+                        {{ log.title }}
+                    </span>
+                    <span class="op-activity-time">{{ log.timestamp|timesince }} ago</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    var orders = [];
+    try { orders = JSON.parse('{{ timeline_orders_json|escapejs }}'); } catch(e) {}
+
+    var passData = [];
+    var failData = [];
+
+    orders.forEach(function(o, i) {
+        var point = {
+            x: new Date(o.created_at_iso),
+            y: i + 1,
+            order_id: o.order_id,
+            product: o.product,
+            quality: o.quality,
+            status: o.status,
+            defect_machine: o.defect_machine || '',
+            defect_type: o.defect_type || '',
+            log_id: o.log_id,
+        };
+        if (o.quality === 'FAIL' || o.status === 'defected') {
+            failData.push(point);
+        } else {
+            passData.push(point);
+        }
+    });
+
+    var canvas = document.getElementById('ordersTimelineChart');
+    if (!canvas) return;
+
+    if (orders.length === 0) {
+        canvas.parentElement.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#999;font-size:0.85rem;">No orders in the last 12 hours</div>';
+        return;
+    }
+
+    var ctx = canvas.getContext('2d');
+
+    var chart = new Chart(ctx, {
+        type: 'scatter',
+        data: {
+            datasets: [
+                {
+                    label: 'PASS',
+                    data: passData,
+                    backgroundColor: 'rgba(34, 197, 94, 0.55)',
+                    borderColor: 'rgba(34, 197, 94, 0.85)',
+                    borderWidth: 2,
+                    pointRadius: 7,
+                    pointHoverRadius: 12,
+                    pointHoverBorderWidth: 3,
+                    pointStyle: 'circle',
+                },
+                {
+                    label: 'FAIL',
+                    data: failData,
+                    backgroundColor: 'rgba(220, 38, 38, 0.55)',
+                    borderColor: 'rgba(220, 38, 38, 0.85)',
+                    borderWidth: 2,
+                    pointRadius: 9,
+                    pointHoverRadius: 14,
+                    pointHoverBorderWidth: 3,
+                    pointHoverBackgroundColor: 'rgba(220, 38, 38, 0.9)',
+                    pointStyle: 'crossRot',
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            onClick: function(event, elements) {
+                if (elements.length > 0) {
+                    var el = elements[0];
+                    var ds = chart.data.datasets[el.datasetIndex];
+                    var point = ds.data[el.index];
+                    var url = '{% url "dashboard:production_logs" %}';
+                    if (point.log_id) {
+                        url += '?highlight=' + point.log_id + '#log-' + point.log_id;
+                    }
+                    window.location.href = url;
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'top',
+                    align: 'end',
+                    labels: {
+                        color: '#555',
+                        font: { family: "'DM Sans', sans-serif", size: 13, weight: '600' },
+                        usePointStyle: true,
+                        padding: 20,
+                    }
+                },
+                tooltip: {
+                    enabled: true,
+                    backgroundColor: 'rgba(255, 255, 255, 0.96)',
+                    titleColor: '#1A1A1A',
+                    bodyColor: '#555',
+                    borderColor: 'rgba(0, 0, 0, 0.08)',
+                    borderWidth: 1,
+                    titleFont: { family: "'DM Sans', sans-serif", size: 14, weight: '700' },
+                    bodyFont: { family: "'DM Sans', sans-serif", size: 12.5, weight: '400' },
+                    footerFont: { family: "'DM Sans', sans-serif", size: 11, weight: '500' },
+                    footerColor: '#999',
+                    padding: { top: 14, bottom: 14, left: 16, right: 16 },
+                    cornerRadius: 12,
+                    boxPadding: 6,
+                    bodySpacing: 5,
+                    caretSize: 8,
+                    caretPadding: 10,
+                    displayColors: false,
+                    callbacks: {
+                        title: function(items) {
+                            var p = items[0].raw;
+                            return p.order_id + '  \u2014  ' + p.product;
+                        },
+                        label: function(item) {
+                            var p = item.raw;
+                            var lines = [];
+                            lines.push('Quality: ' + p.quality + '     Status: ' + p.status);
+                            if (p.defect_machine) lines.push('Failed at: ' + p.defect_machine);
+                            if (p.defect_type) lines.push('Defect: ' + p.defect_type);
+                            return lines;
+                        },
+                        footer: function(items) {
+                            return '\u2192 Click to view logs';
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    type: 'time',
+                    time: { unit: 'hour', displayFormats: { hour: 'ha' } },
+                    grid: { color: 'rgba(0,0,0,0.03)', drawTicks: false },
+                    border: { display: true, color: '#E0E0E0' },
+                    ticks: { color: '#888', font: { family: "'DM Sans', sans-serif", size: 11.5, weight: '500' }, padding: 8 },
+                    title: { display: true, text: 'Time', color: '#999', font: { family: "'DM Sans', sans-serif", size: 13, weight: '600' }, padding: { top: 8 } }
+                },
+                y: {
+                    grid: { color: 'rgba(0,0,0,0.03)', drawTicks: false },
+                    border: { display: true, color: '#E0E0E0' },
+                    ticks: { color: '#888', font: { family: "'DM Sans', sans-serif", size: 11.5, weight: '500' }, stepSize: 1, padding: 8 },
+                    title: { display: true, text: 'Order #', color: '#999', font: { family: "'DM Sans', sans-serif", size: 13, weight: '600' }, padding: { bottom: 8 } }
+                }
+            }
+        }
+    });
+})();
+</script>
+{% endblock %}

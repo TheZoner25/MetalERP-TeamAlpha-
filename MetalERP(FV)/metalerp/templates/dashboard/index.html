@@ -1,0 +1,462 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Stremet{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-hero">
+    <div class="dashboard-header">
+        <h1 class="dashboard-title">Hey, {{ user.first_name|default:user.username|default:"there" }}</h1>
+        <p class="dashboard-subtitle">{{ today|default:"28 March 2026" }}</p>
+    </div>
+
+    <div class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5 mt-6">
+
+        <!-- Total Materials -->
+        <div class="stat-card" style="animation-delay: 0s">
+            <div class="stat-card-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
+                    <path d="m3.3 7 8.7 5 8.7-5"/>
+                    <path d="M12 22V12"/>
+                </svg>
+            </div>
+            <div class="stat-card-value" data-count="{{ stats.total_materials }}">0</div>
+            <div class="stat-card-label">Total Raw Materials</div>
+        </div>
+
+        <!-- Pending Deliveries -->
+        <div class="stat-card" style="animation-delay: 0.05s">
+            <div class="stat-card-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/>
+                    <path d="M15 18H9"/>
+                    <path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/>
+                    <circle cx="17" cy="18" r="2"/>
+                    <circle cx="7" cy="18" r="2"/>
+                </svg>
+            </div>
+            <div class="stat-card-value" data-count="{{ stats.pending_deliveries }}">0</div>
+            <div class="stat-card-label">Unstocked Palets</div>
+        </div>
+
+        <!-- Completed Orders -->
+        <div class="stat-card" style="animation-delay: 0.1s">
+            <div class="stat-card-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                    <polyline points="22 4 12 14.01 9 11.01"/>
+                </svg>
+            </div>
+            <div class="stat-card-value" data-count="{{ stats.completed_orders }}">0</div>
+            <div class="stat-card-label">Completed Orders</div>
+        </div>
+
+        <!-- Total Orders -->
+        <div class="stat-card" style="animation-delay: 0.15s">
+            <div class="stat-card-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7 5V8l-7 5V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/>
+                </svg>
+            </div>
+            <div class="stat-card-value" data-count="{{ stats.total_orders }}">0</div>
+            <div class="stat-card-label">Total Orders</div>
+        </div>
+
+        <!-- Storage Utilization -->
+        <div class="stat-card" style="animation-delay: 0.2s">
+            <div class="stat-card-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 8.35V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.35A2 2 0 0 1 3.26 6.5l8-3.2a2 2 0 0 1 1.48 0l8 3.2A2 2 0 0 1 22 8.35Z"/>
+                    <path d="M6 18h12"/>
+                    <path d="M6 14h12"/>
+                    <rect x="6" y="10" width="12" height="12" rx="0" fill="none"/>
+                </svg>
+            </div>
+            <div class="stat-card-value">{{ stats.storage_utilization }}%</div>
+            <div class="stat-card-label">Storage Utilization</div>
+        </div>
+
+    </div>
+
+    <!-- Quick Navigation -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mt-6">
+        <a href="{% url 'dashboard:delivery' %}" class="quick-nav-card">
+            <div class="flex items-center gap-3">
+                <div class="quick-nav-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/>
+                        <path d="M15 18H9"/>
+                        <path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/>
+                        <circle cx="17" cy="18" r="2"/>
+                        <circle cx="7" cy="18" r="2"/>
+                    </svg>
+                </div>
+                <div>
+                    <div style="font-size: 0.95rem; font-weight: 600; color: #1A1A1A;">Delivery Management</div>
+                    <div style="font-size: 0.82rem; color: #999; margin-top: 2px;">{{ stats.pending_deliveries }} pending</div>
+                </div>
+            </div>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #CCC;"><path d="m9 18 6-6-6-6"/></svg>
+        </a>
+
+        <a href="{% url 'dashboard:manufacturing' %}" class="quick-nav-card">
+            <div class="flex items-center gap-3">
+                <div class="quick-nav-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7 5V8l-7 5V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/>
+                    </svg>
+                </div>
+                <div>
+                    <div style="font-size: 0.95rem; font-weight: 600; color: #1A1A1A;">Manufacturing</div>
+                    <div style="font-size: 0.82rem; color: #999; margin-top: 2px;">{{ stats.completed_orders }} completed</div>
+                </div>
+            </div>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #CCC;"><path d="m9 18 6-6-6-6"/></svg>
+        </a>
+
+        <a href="{% url 'dashboard:health' %}" class="quick-nav-card">
+            <div class="flex items-center gap-3">
+                <div class="quick-nav-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                    </svg>
+                </div>
+                <div>
+                    <div style="font-size: 0.95rem; font-weight: 600; color: #1A1A1A;">Machine Health</div>
+                    <div style="font-size: 0.82rem; color: #999; margin-top: 2px;">Predictive maintenance</div>
+                </div>
+            </div>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #CCC;"><path d="m9 18 6-6-6-6"/></svg>
+        </a>
+    </div>
+
+    <!-- Orders Timeline Chart -->
+    <div class="chart-container mt-6">
+        <div class="table-header-bar">
+            <h3>Orders Timeline</h3>
+            <span style="font-size: 0.75rem; color: #999; font-weight: 400;">Click failed orders to view logs</span>
+        </div>
+        <div class="orders-timeline-container">
+            <canvas id="ordersTimelineChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Recent Manufacturing Orders -->
+    {% if recent_orders %}
+    <div class="table-container mt-6">
+        <div class="table-header-bar">
+            <h3>Recent Manufacturing Orders</h3>
+            <span class="badge">{{ recent_orders|length }}</span>
+        </div>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Order ID</th>
+                    <th>Product</th>
+                    <th>Processing</th>
+                    <th>Quality</th>
+                    <th>Status</th>
+                    <th>Time</th>
+                </tr>
+            </thead>
+            <tbody id="dashOrderBody">
+                {% for o in recent_orders %}
+                <tr style="cursor:pointer;" onclick="openDashOrderModal('{{ o.order_id }}')">
+                    <td class="cell-id">{{ o.order_id }}</td>
+                    <td class="cell-name">{{ o.product }}</td>
+                    <td style="font-size: 0.88rem; color: #666;">{{ o.processing_time|floatformat:1 }}s</td>
+                    <td><span class="status-badge {% if o.quality == 'PASS' %}completed{% else %}badge-error{% endif %}" style="border-radius: 10px; padding: 4px 12px; font-size: 0.75rem;">{{ o.quality }}</span></td>
+                    <td><span class="status-badge {% if o.status == 'completed' %}completed{% else %}badge-error{% endif %}" style="border-radius: 10px; padding: 4px 12px; font-size: 0.75rem;">{{ o.status|title }}</span></td>
+                    <td style="font-size: 0.82rem; color: #999;">{{ o.created_at }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Order Detail Modal -->
+<div class="mfg-modal-overlay" id="dashOrderModalOverlay">
+    <div class="mfg-modal glass">
+        <div class="mfg-modal-header">
+            <h3 id="dashOrderModalTitle">Order Details</h3>
+            <button class="mfg-modal-close" onclick="closeDashOrderModal()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div id="dashOrderModalBody"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Orders Timeline Scatter Chart
+(function() {
+    var orders = [];
+    try { orders = JSON.parse('{{ timeline_orders_json|escapejs }}'); } catch(e) {}
+    if (!orders || orders.length === 0) return;
+
+    var passData = [];
+    var failData = [];
+
+    orders.forEach(function(o, i) {
+        var point = {
+            x: new Date(o.created_at_iso),
+            y: i + 1,
+            order_id: o.order_id,
+            product: o.product,
+            quality: o.quality,
+            status: o.status,
+            defect_machine: o.defect_machine || '',
+            defect_type: o.defect_type || '',
+            created_at_iso: o.created_at_iso,
+        };
+        if (o.quality === 'FAIL' || o.status === 'defected') {
+            failData.push(point);
+        } else {
+            passData.push(point);
+        }
+    });
+
+    var ctx = document.getElementById('ordersTimelineChart').getContext('2d');
+
+    var chart = new Chart(ctx, {
+        type: 'scatter',
+        data: {
+            datasets: [
+                {
+                    label: 'PASS',
+                    data: passData,
+                    backgroundColor: 'rgba(34, 197, 94, 0.55)',
+                    borderColor: 'rgba(34, 197, 94, 0.85)',
+                    borderWidth: 2,
+                    pointRadius: 7,
+                    pointHoverRadius: 12,
+                    pointHoverBorderWidth: 3,
+                    pointStyle: 'circle',
+                },
+                {
+                    label: 'FAIL',
+                    data: failData,
+                    backgroundColor: 'rgba(220, 38, 38, 0.55)',
+                    borderColor: 'rgba(220, 38, 38, 0.85)',
+                    borderWidth: 2,
+                    pointRadius: 9,
+                    pointHoverRadius: 14,
+                    pointHoverBorderWidth: 3,
+                    pointHoverBackgroundColor: 'rgba(220, 38, 38, 0.9)',
+                    pointStyle: 'crossRot',
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            onClick: function(event, elements) {
+                if (elements.length > 0) {
+                    var el = elements[0];
+                    var ds = chart.data.datasets[el.datasetIndex];
+                    var point = ds.data[el.index];
+                    if (ds.label === 'FAIL') {
+                        window.location.href = '/logs/?order=' + encodeURIComponent(point.order_id);
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'top',
+                    align: 'end',
+                    labels: {
+                        color: '#555',
+                        font: { family: "'DM Sans', sans-serif", size: 13, weight: '600' },
+                        usePointStyle: true,
+                        padding: 20,
+                    }
+                },
+                tooltip: {
+                    enabled: true,
+                    backgroundColor: 'rgba(255, 255, 255, 0.96)',
+                    titleColor: '#1A1A1A',
+                    bodyColor: '#555',
+                    borderColor: 'rgba(0, 0, 0, 0.08)',
+                    borderWidth: 1,
+                    titleFont: { family: "'DM Sans', sans-serif", size: 14, weight: '700' },
+                    bodyFont: { family: "'DM Sans', sans-serif", size: 12.5, weight: '400' },
+                    footerFont: { family: "'DM Sans', sans-serif", size: 11, weight: '500' },
+                    footerColor: '#999',
+                    padding: { top: 14, bottom: 14, left: 16, right: 16 },
+                    cornerRadius: 12,
+                    boxPadding: 6,
+                    bodySpacing: 5,
+                    caretSize: 8,
+                    caretPadding: 10,
+                    displayColors: false,
+                    callbacks: {
+                        title: function(items) {
+                            var p = items[0].raw;
+                            return p.order_id + '  \u2014  ' + p.product;
+                        },
+                        label: function(item) {
+                            var p = item.raw;
+                            var lines = [];
+                            lines.push('Quality: ' + p.quality + '     Status: ' + p.status);
+                            if (p.defect_machine) lines.push('Failed at: ' + p.defect_machine);
+                            if (p.defect_type) lines.push('Defect: ' + p.defect_type);
+                            return lines;
+                        },
+                        footer: function(items) {
+                            var p = items[0].raw;
+                            if (p.quality === 'FAIL' || p.status === 'defected') {
+                                return '\u2192 Click to view failure logs';
+                            }
+                            return '';
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    type: 'time',
+                    time: { unit: 'hour', displayFormats: { hour: 'MMM d, ha' } },
+                    grid: { color: 'rgba(0,0,0,0.03)', drawTicks: false },
+                    border: { display: true, color: '#E0E0E0' },
+                    ticks: { color: '#888', font: { family: "'DM Sans', sans-serif", size: 11.5, weight: '500' }, padding: 8 },
+                    title: { display: true, text: 'Time', color: '#999', font: { family: "'DM Sans', sans-serif", size: 13, weight: '600' }, padding: { top: 8 } }
+                },
+                y: {
+                    grid: { color: 'rgba(0,0,0,0.03)', drawTicks: false },
+                    border: { display: true, color: '#E0E0E0' },
+                    ticks: { color: '#888', font: { family: "'DM Sans', sans-serif", size: 11.5, weight: '500' }, stepSize: 1, padding: 8 },
+                    title: { display: true, text: 'Order #', color: '#999', font: { family: "'DM Sans', sans-serif", size: 13, weight: '600' }, padding: { bottom: 8 } }
+                }
+            }
+        }
+    });
+})();
+</script>
+<script>
+var dashOrders = [];
+var dashScraps = {};
+var machineNames = [];
+try { dashOrders = JSON.parse('{{ recent_orders_json|escapejs }}'); } catch(e) {}
+try { machineNames = JSON.parse('{{ machine_names_json|escapejs }}'); } catch(e) {}
+
+// Group scraps by order_id
+(function() {
+    var scraps = [];
+    try { scraps = JSON.parse('{{ recent_scraps_json|escapejs }}'); } catch(e) {}
+    scraps.forEach(function(s) {
+        var oid = s.order_id || '';
+        if (!dashScraps[oid]) dashScraps[oid] = [];
+        dashScraps[oid].push(s);
+    });
+})();
+
+function dashBuildTimeline(stages, timestamps, mode) {
+    return stages.map(function(s, i) {
+        var machineName = (machineNames[i] && machineNames[i].name) || ('Stage ' + (i + 1));
+        var metricsHTML = Object.keys(s).filter(function(k) { return k !== 'energy' && k !== 'scrap' && k !== 'scrapType'; })
+            .map(function(k) { return '<span>' + k + ': ' + s[k] + '</span>'; }).join('');
+        if (s.scrap) {
+            metricsHTML += '<span class="scrap-metric">Scrap: ' + s.scrap + '% (' + (s.scrapType || '') + ')</span>';
+        }
+        var dotClass = mode === 'fail' && i === stages.length - 1 ? 'fail' : 'pass';
+        return '<div class="timeline-stage">' +
+            '<div class="stage-dot ' + dotClass + '"></div>' +
+            '<div class="stage-info">' +
+                '<strong>' + machineName + '</strong>' +
+                '<span class="stage-time">' + (timestamps[i] || '') + '</span>' +
+                '<div class="stage-metrics">' + metricsHTML + '</div>' +
+            '</div></div>';
+    }).join('');
+}
+
+function openDashOrderModal(orderId) {
+    var order = dashOrders.find(function(o) { return o.order_id === orderId; });
+    if (!order) return;
+
+    var isDefect = order.status === 'defected';
+    var title = order.order_id + ' \u2014 ' + (isDefect ? 'Defect Report' : 'Product History');
+    document.getElementById('dashOrderModalTitle').textContent = title;
+
+    var stages = order.stage_data || [];
+    var timestamps = order.stage_timestamps || [];
+    var timelineHTML = stages.length > 0 ? dashBuildTimeline(stages, timestamps, isDefect ? 'fail' : 'pass') : '';
+
+    var html =
+        '<div class="modal-profile-grid">' +
+            '<div class="machine-profile-item"><span class="profile-label">Product</span><span class="profile-value">' + order.product + '</span></div>' +
+            '<div class="machine-profile-item"><span class="profile-label">Dimensions</span><span class="profile-value">' + (order.dimensions || '\u2014') + '</span></div>' +
+            '<div class="machine-profile-item"><span class="profile-label">Material</span><span class="profile-value">' + (order.material_name || '\u2014') + '</span></div>' +
+            '<div class="machine-profile-item"><span class="profile-label">Vendor</span><span class="profile-value">' + (order.manufacturer || '\u2014') + '</span></div>' +
+            '<div class="machine-profile-item"><span class="profile-label">Processing Time</span><span class="profile-value">' + (order.processing_time || 0).toFixed(1) + 's</span></div>' +
+            '<div class="machine-profile-item"><span class="profile-label">Time</span><span class="profile-value">' + (order.created_at || '') + '</span></div>' +
+        '</div>';
+
+    // Failure analysis card for defects
+    if (isDefect) {
+        html +=
+            '<div class="failure-card">' +
+                '<div class="failure-card-title">Failure Analysis</div>' +
+                '<div class="failure-grid">' +
+                    '<div><span class="fg-label">Failed At Machine</span><br><strong>' + (order.defect_machine || '\u2014') + '</strong></div>' +
+                    '<div><span class="fg-label">Defect Type</span><br><strong>' + (order.defect_type || '\u2014') + '</strong></div>' +
+                    '<div><span class="fg-label">Root Cause</span><br><strong>' + (order.defect_cause || '\u2014') + '</strong></div>' +
+                    '<div><span class="fg-label">Stages Before Failure</span><br><strong>' + (order.stages_completed || 0) + '/' + machineNames.length + '</strong></div>' +
+                '</div>' +
+            '</div>';
+    }
+
+    // Manufacturing pipeline timeline
+    if (timelineHTML) {
+        html += '<h4>' + (isDefect ? 'Pipeline Progress Before Failure' : 'Manufacturing Pipeline') + '</h4>' +
+            '<div class="product-history"><div class="history-timeline">' + timelineHTML + '</div></div>';
+    }
+
+    // Scrap events for this order
+    var orderScraps = dashScraps[order.order_id] || [];
+    if (orderScraps.length > 0) {
+        html += '<h4>Scrap Events</h4>' +
+            '<table class="data-table" style="margin:0;"><thead><tr>' +
+            '<th>Machine</th><th>Scrap Type</th><th>Scrap Rate</th>' +
+            '</tr></thead><tbody>';
+        orderScraps.forEach(function(s) {
+            html += '<tr><td>' + (s.machine_name || '') + '</td>' +
+                '<td>' + (s.scrap_type || '') + '</td>' +
+                '<td>' + (s.scrap_rate || 0).toFixed(2) + '%</td></tr>';
+        });
+        html += '</tbody></table>';
+    }
+
+    // Traceability links
+    html += '<h4>Traceability Links</h4>' +
+        '<div class="history-links">' +
+            '<a href="/materials/" class="link-badge">Material: ' + (order.material_name || '\u2014') + '</a>' +
+            (order.delivery_batch ? '<a href="/delivery/" class="link-badge">Delivery: ' + order.delivery_batch + '</a>' : '') +
+            '<span class="link-badge">Vendor: ' + (order.manufacturer || '\u2014') + '</span>' +
+        '</div>';
+
+    // Totals
+    html += '<div class="history-totals">' +
+        '<span>Total Energy: <strong>' + (order.total_energy || 0).toFixed(1) + ' kWh</strong></span>' +
+        '<span>Scrap Rate: <strong>' + (order.total_scrap || 0).toFixed(2) + '%</strong></span>' +
+        '<span>Stages: <strong>' + (order.stages_completed || stages.length) + '/' + machineNames.length + '</strong></span>' +
+        '<span>Quality: <strong class="' + (order.quality === 'PASS' ? 'quality-pass' : 'quality-fail') + '">' + order.quality + '</strong></span>' +
+    '</div>';
+
+    document.getElementById('dashOrderModalBody').innerHTML = html;
+    document.getElementById('dashOrderModalOverlay').classList.add('active');
+}
+
+function closeDashOrderModal() {
+    document.getElementById('dashOrderModalOverlay').classList.remove('active');
+}
+</script>
+{% endblock %}

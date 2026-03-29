@@ -1,0 +1,206 @@
+{% extends "base_production.html" %}
+{% load static %}
+
+{% block title %}Stremet — Manufacturing Orders{% endblock %}
+
+{% block ui_content %}
+<div class="op-page-content">
+    <div class="op-page-header">
+        <h1 class="op-page-title">Manufacturing Orders</h1>
+    </div>
+
+    <!-- Filter Bar -->
+    <form method="get" class="ps-filter-bar">
+        <select name="status" class="op-select">
+            <option value="">All Status</option>
+            <option value="completed" {% if filter_status == 'completed' %}selected{% endif %}>Completed</option>
+            <option value="defected" {% if filter_status == 'defected' %}selected{% endif %}>Defected</option>
+        </select>
+        <select name="quality" class="op-select">
+            <option value="">All Quality</option>
+            <option value="PASS" {% if filter_quality == 'PASS' %}selected{% endif %}>PASS</option>
+            <option value="FAIL" {% if filter_quality == 'FAIL' %}selected{% endif %}>FAIL</option>
+        </select>
+        <input type="text" name="product" value="{{ filter_product }}" placeholder="Search product..." class="op-input">
+        <input type="date" name="date_from" value="{{ filter_date_from }}" class="op-input" placeholder="From">
+        <input type="date" name="date_to" value="{{ filter_date_to }}" class="op-input" placeholder="To">
+        <button type="submit" class="ps-filter-btn">Filter</button>
+        {% if filter_status or filter_quality or filter_product or filter_date_from or filter_date_to %}
+        <a href="{% url 'dashboard:production_orders' %}" class="ps-filter-clear">Clear</a>
+        {% endif %}
+    </form>
+
+    <!-- Orders Table -->
+    <div class="ps-table-wrap">
+        <table class="ps-table">
+            <thead>
+                <tr>
+                    <th>Order ID</th>
+                    <th>Product</th>
+                    <th>Material</th>
+                    <th>Manufacturer</th>
+                    <th>Status</th>
+                    <th>Quality</th>
+                    <th>Time</th>
+                    <th>Energy</th>
+                    <th>Scrap %</th>
+                    <th>Stages</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in orders %}
+                <tr class="ps-order-row" onclick="toggleOrderDetail(this)">
+                    <td class="ps-cell-id">{{ item.order.order_id }}</td>
+                    <td>{{ item.order.product }}</td>
+                    <td>{{ item.order.material_name|default:"—" }}</td>
+                    <td>{{ item.order.manufacturer|default:"—" }}</td>
+                    <td>
+                        <span class="ps-badge ps-badge-{{ item.order.status }}">{{ item.order.status }}</span>
+                    </td>
+                    <td>
+                        <span class="ps-badge ps-badge-{{ item.order.quality|lower }}">{{ item.order.quality }}</span>
+                    </td>
+                    <td>{{ item.order.processing_time|floatformat:1 }}s</td>
+                    <td>{{ item.order.total_energy|floatformat:1 }}</td>
+                    <td>{{ item.order.total_scrap|floatformat:2 }}%</td>
+                    <td>{{ item.order.stages_completed }}/5</td>
+                    <td>{{ item.order.created_at|date:"M d, H:i" }}</td>
+                </tr>
+                <tr class="ps-order-detail" style="display: none;">
+                    <td colspan="11">
+                        <div class="ps-detail-content ps-history-panel">
+
+                            <!-- Supply Chain Origin -->
+                            {% if item.delivery_info %}
+                            <div class="ps-detail-section">
+                                <h4 class="ps-detail-title">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+                                    Supply Chain Origin
+                                </h4>
+                                <div class="ps-detail-grid ps-detail-grid-3">
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Delivery Batch</span><span class="ps-detail-val ps-cell-mono">{{ item.delivery_info.batch_id }}</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Supplier</span><span class="ps-detail-val">{{ item.delivery_info.manufacturer }}</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Material</span><span class="ps-detail-val">{{ item.delivery_info.material_name }}</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Warehouse</span><span class="ps-detail-val">{{ item.delivery_info.warehouse_name }} ({{ item.delivery_info.warehouse_code }})</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Shelf Location</span><span class="ps-detail-val ps-cell-mono">{{ item.delivery_info.shelf_id }}</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Pallets</span><span class="ps-detail-val">{{ item.delivery_info.quantity }}</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Delivery Date</span><span class="ps-detail-val">{{ item.delivery_info.date|date:"M d, Y" }}</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Delivery Status</span><span class="ps-detail-val">{{ item.delivery_info.status }}</span></div>
+                                    {% if item.delivery_info.stored_shelves %}
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Stored On Shelves</span><span class="ps-detail-val ps-cell-mono">{{ item.delivery_info.stored_shelves|join:", " }}</span></div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% endif %}
+
+                            <!-- Production Details -->
+                            <div class="ps-detail-section">
+                                <h4 class="ps-detail-title">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2"/><path d="M12 21v2"/><path d="M4.22 4.22l1.42 1.42"/><path d="M18.36 18.36l1.42 1.42"/><path d="M1 12h2"/><path d="M21 12h2"/></svg>
+                                    Production Details
+                                </h4>
+                                <div class="ps-detail-grid ps-detail-grid-3">
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Order ID</span><span class="ps-detail-val ps-cell-mono">{{ item.order.order_id }}</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Product</span><span class="ps-detail-val">{{ item.order.product }}</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Dimensions</span><span class="ps-detail-val">{{ item.order.dimensions|default:"—" }}</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Processing Time</span><span class="ps-detail-val">{{ item.order.processing_time|floatformat:1 }}s</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Total Energy</span><span class="ps-detail-val">{{ item.order.total_energy|floatformat:1 }} kWh</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Scrap Rate</span><span class="ps-detail-val">{{ item.order.total_scrap|floatformat:2 }}%</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Stages Completed</span><span class="ps-detail-val">{{ item.order.stages_completed }}/5</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Final Status</span><span class="ps-detail-val"><span class="ps-badge ps-badge-{{ item.order.status }}">{{ item.order.status }}</span></span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Quality</span><span class="ps-detail-val"><span class="ps-badge ps-badge-{{ item.order.quality|lower }}">{{ item.order.quality }}</span></span></div>
+                                </div>
+                            </div>
+
+                            <!-- Defect Information (if defected) -->
+                            {% if item.order.status == 'defected' %}
+                            <div class="ps-detail-section ps-detail-defect">
+                                <h4 class="ps-detail-title">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d44" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                                    Defect Information
+                                </h4>
+                                <div class="ps-detail-grid ps-detail-grid-3">
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Failed at Machine</span><span class="ps-detail-val" style="color: #d44;">{{ item.order.defect_machine|default:"—" }}</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Machine ID</span><span class="ps-detail-val ps-cell-mono">{{ item.order.defect_machine_id|default:"—" }}</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Defect Type</span><span class="ps-detail-val">{{ item.order.defect_type|default:"—" }}</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Root Cause</span><span class="ps-detail-val">{{ item.order.defect_cause|default:"—" }}</span></div>
+                                    <div class="ps-detail-item"><span class="ps-detail-key">Stage Failed</span><span class="ps-detail-val">{{ item.order.stages_completed }}/5</span></div>
+                                </div>
+                            </div>
+                            {% endif %}
+
+                            <!-- Scrap Events -->
+                            {% if item.scraps %}
+                            <div class="ps-detail-section">
+                                <h4 class="ps-detail-title">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                                    Scrap Events ({{ item.scraps|length }})
+                                </h4>
+                                <div class="ps-mini-table-wrap">
+                                    <table class="ps-mini-table">
+                                        <thead><tr><th>Machine</th><th>Machine ID</th><th>Scrap Type</th><th>Rate</th><th>Time</th></tr></thead>
+                                        <tbody>
+                                            {% for s in item.scraps %}
+                                            <tr>
+                                                <td>{{ s.machine_name }}</td>
+                                                <td class="ps-cell-mono">{{ s.machine_id }}</td>
+                                                <td>{{ s.scrap_type }}</td>
+                                                <td>{{ s.scrap_rate|floatformat:2 }}%</td>
+                                                <td>{{ s.created_at|date:"H:i:s" }}</td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            {% endif %}
+
+                            <!-- Full Event Timeline -->
+                            {% if item.timeline %}
+                            <div class="ps-detail-section">
+                                <h4 class="ps-detail-title">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                    Complete Event Timeline
+                                </h4>
+                                <div class="ps-timeline">
+                                    {% for ev in item.timeline %}
+                                    <div class="ps-timeline-item">
+                                        <div class="ps-timeline-dot ps-sev-{{ ev.severity }}"></div>
+                                        <div class="ps-timeline-content">
+                                            <div class="ps-timeline-header">
+                                                <span class="ps-type-badge ps-type-{{ ev.event_type }}">{{ ev.event_type }}</span>
+                                                <span class="ps-timeline-time">{{ ev.timestamp|date:"M d, H:i:s" }}</span>
+                                            </div>
+                                            <div class="ps-timeline-title">{{ ev.title }}</div>
+                                            {% if ev.description %}<div class="ps-timeline-desc">{{ ev.description }}</div>{% endif %}
+                                            <a href="{% url 'dashboard:production_logs' %}?highlight={{ ev.id }}#log-{{ ev.id }}" class="ps-timeline-link">View in logs &rarr;</a>
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endif %}
+
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="11" class="ps-empty">No manufacturing orders found</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+function toggleOrderDetail(row) {
+    var detail = row.nextElementSibling;
+    if (detail && detail.classList.contains('ps-order-detail')) {
+        var isOpen = detail.style.display !== 'none';
+        detail.style.display = isOpen ? 'none' : 'table-row';
+        row.classList.toggle('expanded', !isOpen);
+    }
+}
+</script>
+{% endblock %}

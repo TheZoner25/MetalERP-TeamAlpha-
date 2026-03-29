@@ -1,0 +1,217 @@
+{% extends "base_maintenance.html" %}
+{% load static %}
+
+{% block title %}Stremet — Maintenance Log{% endblock %}
+
+{% block ui_content %}
+<div class="op-page-content">
+    <div class="op-page-header">
+        <h1 class="op-page-title">Maintenance Log</h1>
+        <div class="op-page-actions">
+            <button class="op-btn op-btn-primary" id="newEntryBtn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                New Entry
+            </button>
+        </div>
+    </div>
+
+    <!-- New Entry Form -->
+    <div class="mt-log-form" id="entryForm" style="display: none;">
+        <h3 class="mt-form-title">Log Maintenance Entry</h3>
+        <div class="mt-form-grid">
+            <div class="mt-form-group">
+                <label class="mt-form-label">Machine</label>
+                <select id="formMachine" class="op-select mt-form-input" required>
+                    <option value="">Select machine...</option>
+                    {% for m in machines %}
+                    <option value="{{ m.machine_id }}">{{ m.machine_name }} ({{ m.machine_id }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="mt-form-group">
+                <label class="mt-form-label">Date</label>
+                <input type="date" id="formDate" class="op-select mt-form-input" value="">
+            </div>
+            <div class="mt-form-group">
+                <label class="mt-form-label">Type</label>
+                <select id="formType" class="op-select mt-form-input" required>
+                    <option value="preventive">Preventive</option>
+                    <option value="corrective">Corrective</option>
+                    <option value="inspection">Inspection</option>
+                </select>
+            </div>
+            <div class="mt-form-group">
+                <label class="mt-form-label">Next Scheduled</label>
+                <input type="date" id="formNextScheduled" class="op-select mt-form-input">
+            </div>
+            <div class="mt-form-group mt-form-full">
+                <label class="mt-form-label">Description</label>
+                <textarea id="formDescription" class="op-select mt-form-input mt-form-textarea" rows="3" placeholder="Describe the maintenance performed..." required></textarea>
+            </div>
+            <div class="mt-form-group mt-form-full">
+                <label class="mt-form-label">Parts Replaced</label>
+                <input type="text" id="formParts" class="op-select mt-form-input" placeholder="e.g. Belt, Filter, Bearing...">
+            </div>
+            <div class="mt-form-group mt-form-full">
+                <label class="mt-form-label">Technician Notes</label>
+                <textarea id="formNotes" class="op-select mt-form-input mt-form-textarea" rows="2" placeholder="Additional observations..."></textarea>
+            </div>
+        </div>
+        <div class="mt-form-actions">
+            <button class="op-btn" id="cancelEntryBtn">Cancel</button>
+            <button class="op-btn op-btn-primary" id="submitEntryBtn">Save Entry</button>
+        </div>
+        <div id="formStatus" class="mt-form-status" style="display: none;"></div>
+    </div>
+
+    <!-- Filter Bar -->
+    <div class="mt-filter-bar">
+        <select id="filterMachine" class="op-select">
+            <option value="">All Machines</option>
+            {% for m in machines %}
+            <option value="{{ m.machine_id }}" {% if filter_machine == m.machine_id %}selected{% endif %}>{{ m.machine_name }}</option>
+            {% endfor %}
+        </select>
+        <select id="filterType" class="op-select">
+            <option value="">All Types</option>
+            <option value="preventive" {% if filter_type == 'preventive' %}selected{% endif %}>Preventive</option>
+            <option value="corrective" {% if filter_type == 'corrective' %}selected{% endif %}>Corrective</option>
+            <option value="inspection" {% if filter_type == 'inspection' %}selected{% endif %}>Inspection</option>
+        </select>
+        <input type="date" id="filterDateFrom" class="op-select" value="{{ filter_date_from }}" placeholder="From">
+        <input type="date" id="filterDateTo" class="op-select" value="{{ filter_date_to }}" placeholder="To">
+        <button class="op-btn" id="applyFilters">Apply</button>
+    </div>
+
+    <!-- Log Table -->
+    <div class="op-table-container">
+        <table class="op-table" id="maintenanceTable">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Machine</th>
+                    <th>Type</th>
+                    <th>Description</th>
+                    <th>Parts Replaced</th>
+                    <th>Next Scheduled</th>
+                </tr>
+            </thead>
+            <tbody id="logTableBody">
+                {% for entry in entries %}
+                <tr>
+                    <td class="op-td-mono">{{ entry.date }}</td>
+                    <td class="op-td-primary">{{ entry.machine.machine_name }}</td>
+                    <td><span class="mt-badge mt-badge-{{ entry.maintenance_type }}">{{ entry.maintenance_type }}</span></td>
+                    <td>{{ entry.description|truncatewords:15 }}</td>
+                    <td>{{ entry.parts_replaced|default:"—" }}</td>
+                    <td class="op-td-mono">{{ entry.next_scheduled|default:"—" }}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="op-td-empty">No maintenance entries logged yet</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('entryForm');
+    const newBtn = document.getElementById('newEntryBtn');
+    const cancelBtn = document.getElementById('cancelEntryBtn');
+    const submitBtn = document.getElementById('submitEntryBtn');
+    const formStatus = document.getElementById('formStatus');
+
+    // Set default date to today
+    var now = new Date();
+    var localDate = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+    document.getElementById('formDate').value = localDate;
+
+    newBtn.addEventListener('click', () => {
+        form.style.display = form.style.display === 'none' ? 'block' : 'none';
+    });
+    cancelBtn.addEventListener('click', () => { form.style.display = 'none'; });
+
+    submitBtn.addEventListener('click', async () => {
+        const machine_id = document.getElementById('formMachine').value;
+        const maintenance_type = document.getElementById('formType').value;
+        const description = document.getElementById('formDescription').value.trim();
+        const entry_date = document.getElementById('formDate').value;
+        const parts_replaced = document.getElementById('formParts').value.trim();
+        const technician_notes = document.getElementById('formNotes').value.trim();
+        const next_scheduled = document.getElementById('formNextScheduled').value;
+
+        if (!machine_id || !description) {
+            formStatus.textContent = 'Machine and description are required.';
+            formStatus.style.display = 'block';
+            formStatus.className = 'mt-form-status mt-form-error';
+            return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Saving...';
+
+        try {
+            const resp = await fetch('/api/maintenance-entry/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ machine_id, maintenance_type, description, date: entry_date, parts_replaced, technician_notes, next_scheduled }),
+            });
+            const data = await resp.json();
+            if (data.ok) {
+                // Prepend row to table
+                const tbody = document.getElementById('logTableBody');
+                const emptyRow = tbody.querySelector('.op-td-empty');
+                if (emptyRow) emptyRow.closest('tr').remove();
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="op-td-mono">${data.entry.date}</td>
+                    <td class="op-td-primary">${data.entry.machine_name}</td>
+                    <td><span class="mt-badge mt-badge-${data.entry.maintenance_type}">${data.entry.maintenance_type}</span></td>
+                    <td>${data.entry.description.split(' ').slice(0, 15).join(' ')}${data.entry.description.split(' ').length > 15 ? '...' : ''}</td>
+                    <td>${data.entry.parts_replaced || '—'}</td>
+                    <td class="op-td-mono">${data.entry.next_scheduled || '—'}</td>
+                `;
+                tbody.prepend(tr);
+
+                // Reset form
+                document.getElementById('formMachine').value = '';
+                document.getElementById('formDescription').value = '';
+                document.getElementById('formParts').value = '';
+                document.getElementById('formNotes').value = '';
+                document.getElementById('formNextScheduled').value = '';
+                form.style.display = 'none';
+                formStatus.style.display = 'none';
+            } else {
+                formStatus.textContent = data.error || 'Failed to save entry.';
+                formStatus.style.display = 'block';
+                formStatus.className = 'mt-form-status mt-form-error';
+            }
+        } catch (err) {
+            formStatus.textContent = 'Network error. Please try again.';
+            formStatus.style.display = 'block';
+            formStatus.className = 'mt-form-status mt-form-error';
+        }
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Save Entry';
+    });
+
+    // Filters
+    document.getElementById('applyFilters').addEventListener('click', () => {
+        const params = new URLSearchParams();
+        const m = document.getElementById('filterMachine').value;
+        const t = document.getElementById('filterType').value;
+        const df = document.getElementById('filterDateFrom').value;
+        const dt = document.getElementById('filterDateTo').value;
+        if (m) params.set('machine', m);
+        if (t) params.set('type', t);
+        if (df) params.set('date_from', df);
+        if (dt) params.set('date_to', dt);
+        window.location.href = window.location.pathname + '?' + params.toString();
+    });
+});
+</script>
+{% endblock %}

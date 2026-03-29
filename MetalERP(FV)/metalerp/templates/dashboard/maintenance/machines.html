@@ -1,0 +1,158 @@
+{% extends "base_maintenance.html" %}
+{% load static %}
+
+{% block title %}Stremet — Machine Overview{% endblock %}
+
+{% block ui_content %}
+<div class="op-page-content">
+    <div class="op-page-header">
+        <h1 class="op-page-title">Machine Overview</h1>
+        <div class="op-page-actions">
+            <select id="machineSort" class="op-select">
+                <option value="name">Sort by Name</option>
+                <option value="health-asc">Health: Low to High</option>
+                <option value="health-desc">Health: High to Low</option>
+            </select>
+            <select id="machineFilter" class="op-select">
+                <option value="all">All Machines</option>
+                <option value="critical">Critical</option>
+                <option value="maintenance">Needs Maintenance</option>
+                <option value="warning">Warning</option>
+                <option value="healthy">Healthy</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="mt-machines-grid" id="machinesGrid">
+        {% for m in machines %}
+        <div class="mt-machine-card" data-status="{{ m.status }}" data-health="{{ m.health_pct }}" data-name="{{ m.machine_name }}">
+            <div class="mt-machine-card-top">
+                <div class="mt-health-gauge">
+                    <svg viewBox="0 0 80 80" class="mt-gauge-svg">
+                        <circle cx="40" cy="40" r="34" fill="none" stroke="#f0f0f0" stroke-width="5"/>
+                        <circle cx="40" cy="40" r="34" fill="none"
+                            stroke="{% if m.health_pct > 70 %}#2a9d4e{% elif m.health_pct > 40 %}#d4a017{% elif m.health_pct > 20 %}#d47a1a{% else %}#c33{% endif %}"
+                            stroke-width="5"
+                            stroke-dasharray="{{ m.health_pct|floatformat:0 }}% 999"
+                            stroke-dashoffset="0"
+                            stroke-linecap="round"
+                            transform="rotate(-90 40 40)"
+                            style="stroke-dasharray: {% widthratio m.health_pct 100 214 %} 214;"
+                        />
+                    </svg>
+                    <div class="mt-gauge-value">{{ m.health_pct }}%</div>
+                </div>
+                <div class="mt-machine-info">
+                    <h3 class="mt-machine-name">{{ m.machine_name }}</h3>
+                    <span class="mt-machine-id">{{ m.machine_id }}</span>
+                    <span class="mt-status-badge mt-status-{{ m.status }}">
+                        {% if m.status == 'healthy' %}Operational{% elif m.status == 'warning' %}Wear Detected{% elif m.status == 'maintenance' %}Needs Maintenance{% else %}Critical{% endif %}
+                    </span>
+                </div>
+            </div>
+
+            <div class="mt-machine-stats">
+                <div class="mt-stat">
+                    <span class="mt-stat-label">Usage</span>
+                    <span class="mt-stat-value">{{ m.usage_count }} / {{ m.failure_threshold }}</span>
+                </div>
+                <div class="mt-stat">
+                    <span class="mt-stat-label">Defects</span>
+                    <span class="mt-stat-value">{{ m.defect_count }}</span>
+                </div>
+                <div class="mt-stat">
+                    <span class="mt-stat-label">Scrap Events</span>
+                    <span class="mt-stat-value">{{ m.scrap_count }}</span>
+                </div>
+                <div class="mt-stat">
+                    <span class="mt-stat-label">Last Maintenance</span>
+                    <span class="mt-stat-value">{% if m.last_maintenance %}{{ m.last_maintenance|timesince }} ago{% else %}Never{% endif %}</span>
+                </div>
+            </div>
+
+            <button class="mt-expand-btn" onclick="toggleExpand(this)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                Details
+            </button>
+
+            <div class="mt-machine-expand" style="display: none;">
+                {% if m.detail_data.equipment %}
+                <div class="mt-detail-section">
+                    <h4 class="mt-detail-title">Equipment Info</h4>
+                    <div class="mt-detail-grid">
+                        {% if m.detail_data.equipment.purchaseDate %}<div class="mt-detail-item"><span class="mt-detail-key">Purchase Date</span><span class="mt-detail-val">{{ m.detail_data.equipment.purchaseDate }}</span></div>{% endif %}
+                        {% if m.detail_data.equipment.depreciationYears %}<div class="mt-detail-item"><span class="mt-detail-key">Depreciation</span><span class="mt-detail-val">{{ m.detail_data.equipment.depreciationYears }} years</span></div>{% endif %}
+                        {% if m.detail_data.equipment.totalHours %}<div class="mt-detail-item"><span class="mt-detail-key">Total Hours</span><span class="mt-detail-val">{{ m.detail_data.equipment.totalHours }}</span></div>{% endif %}
+                        {% if m.detail_data.equipment.wearLevel %}<div class="mt-detail-item"><span class="mt-detail-key">Wear Level</span><span class="mt-detail-val">{{ m.detail_data.equipment.wearLevel }}</span></div>{% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if m.maintenance_entries %}
+                <div class="mt-detail-section">
+                    <h4 class="mt-detail-title">Recent Maintenance</h4>
+                    <div class="mt-timeline">
+                        {% for entry in m.maintenance_entries %}
+                        <div class="mt-timeline-item">
+                            <div class="mt-timeline-dot"></div>
+                            <div class="mt-timeline-content">
+                                <div class="mt-timeline-header">
+                                    <span class="mt-badge mt-badge-{{ entry.maintenance_type }}">{{ entry.maintenance_type }}</span>
+                                    <span class="mt-timeline-date">{{ entry.date }}</span>
+                                </div>
+                                <p class="mt-timeline-desc">{{ entry.description|truncatewords:20 }}</p>
+                                {% if entry.parts_replaced %}<p class="mt-timeline-parts">Parts: {{ entry.parts_replaced }}</p>{% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% empty %}
+        <div class="op-td-empty">No machines configured</div>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+function toggleExpand(btn) {
+    const expand = btn.nextElementSibling;
+    const isOpen = expand.style.display !== 'none';
+    expand.style.display = isOpen ? 'none' : 'block';
+    btn.classList.toggle('expanded', !isOpen);
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const sortSelect = document.getElementById('machineSort');
+    const filterSelect = document.getElementById('machineFilter');
+    const grid = document.getElementById('machinesGrid');
+
+    function applyFilters() {
+        const filter = filterSelect.value;
+        const sort = sortSelect.value;
+        const cards = Array.from(grid.querySelectorAll('.mt-machine-card'));
+
+        cards.forEach(card => {
+            if (filter === 'all' || card.dataset.status === filter) {
+                card.style.display = '';
+            } else {
+                card.style.display = 'none';
+            }
+        });
+
+        const visible = cards.filter(c => c.style.display !== 'none');
+        visible.sort((a, b) => {
+            if (sort === 'health-asc') return parseFloat(a.dataset.health) - parseFloat(b.dataset.health);
+            if (sort === 'health-desc') return parseFloat(b.dataset.health) - parseFloat(a.dataset.health);
+            return a.dataset.name.localeCompare(b.dataset.name);
+        });
+        visible.forEach(card => grid.appendChild(card));
+    }
+
+    sortSelect.addEventListener('change', applyFilters);
+    filterSelect.addEventListener('change', applyFilters);
+});
+</script>
+{% endblock %}

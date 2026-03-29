@@ -1,0 +1,128 @@
+{% extends "base_production.html" %}
+{% load static %}
+
+{% block title %}Stremet — Warehouse Layout Editor{% endblock %}
+
+{% block ui_content %}
+<div class="op-page-content">
+    <div class="op-page-header" style="margin-bottom: 16px;">
+        <div>
+            <h1 class="op-page-title">Warehouse Layout</h1>
+            <p style="font-size: 0.8rem; color: #888; margin-top: 2px;">{{ warehouse.name }} ({{ warehouse.code }})</p>
+        </div>
+        <a href="{% url 'dashboard:production_warehouses' %}" class="ps-btn ps-btn-outline" style="text-decoration:none; font-size: 0.78rem;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+            Back to Warehouses
+        </a>
+    </div>
+
+    <!-- Dimensions Panel -->
+    <div class="ps-editor-panel">
+        <h3 class="ps-editor-section-title">Dimensions & Shape</h3>
+
+        <!-- Shape Selector -->
+        <div class="flex gap-2 mb-4 flex-wrap" id="shapeSelector">
+            <button class="shape-btn active" data-shape="rectangle">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="1"/></svg>
+                Rectangle
+            </button>
+            <button class="shape-btn" data-shape="circle">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>
+                Circle
+            </button>
+            <button class="shape-btn" data-shape="custom">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l9 6v6l-9 6-9-6V9z"/></svg>
+                Custom
+            </button>
+        </div>
+
+        <div class="setup-form-grid">
+            <div class="setup-field">
+                <label>Width (m)</label>
+                <input type="number" id="widthInput" value="{{ warehouse.width_m }}" min="1" step="0.5">
+            </div>
+            <div class="setup-field">
+                <label>Length (m)</label>
+                <input type="number" id="lengthInput" value="{{ warehouse.length_m }}" min="1" step="0.5">
+            </div>
+            <div class="setup-field">
+                <label>Height (m)</label>
+                <input type="number" id="heightInput" value="{{ warehouse.height_m }}" min="1" step="0.5">
+            </div>
+            <div class="setup-field">
+                <label>Grid Columns</label>
+                <input type="number" id="gridColsInput" value="{{ warehouse.grid_cols }}" min="2" max="50">
+            </div>
+            <div class="setup-field">
+                <label>Grid Rows</label>
+                <input type="number" id="gridRowsInput" value="{{ warehouse.grid_rows }}" min="2" max="50">
+            </div>
+            <div class="setup-field">
+                <label>Shelves / Unit</label>
+                <input type="number" id="shelvesInput" value="{{ warehouse.shelves_per_unit }}" min="1" max="20">
+            </div>
+            <div class="setup-field">
+                <label>Slots / Shelf</label>
+                <input type="number" id="slotsInput" value="{{ warehouse.slots_per_shelf }}" min="1" max="10">
+            </div>
+            <div class="setup-field" style="display:flex;align-items:flex-end">
+                <button class="btn-primary" id="generateBtn">Generate Grid</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Grid Editor -->
+    <div class="ps-editor-panel" style="margin-bottom: 80px;">
+        <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <h3 class="ps-editor-section-title" style="margin-bottom:0">Floor Plan Editor</h3>
+            <div class="setup-legend">
+                <span class="legend-item"><span class="legend-dot" style="background:#5B8DEF"></span>Storage</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#444"></span>Wall</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#D4D4D4"></span>Walkway</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#E8943A"></span>Dock</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#F0F0F3;border:1px solid #ccc"></span>Empty</span>
+            </div>
+        </div>
+        <div id="gridEditorWrap" class="grid-editor-wrap">
+            <canvas id="gridCanvas"></canvas>
+        </div>
+        <p id="gridHint" class="text-xs mt-2" style="color:#999">Click "Generate Grid" to start. Then use the toolbar below to paint cells.</p>
+    </div>
+
+    <!-- Sticky Bottom Toolbar -->
+    <div class="setup-toolbar" id="setupToolbar">
+        <div class="toolbar-tools">
+            <button class="tool-btn" data-tool="wall" title="Wall — mark impassable areas">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+                Wall
+            </button>
+            <button class="tool-btn" data-tool="storage" title="Storage — place shelving units">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/></svg>
+                Storage
+            </button>
+            <button class="tool-btn" data-tool="walkway" title="Walkway — open paths">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19L20 5"/><path d="M4 5l16 14"/></svg>
+                Walkway
+            </button>
+            <button class="tool-btn" data-tool="dock" title="Loading dock">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>
+                Dock
+            </button>
+            <button class="tool-btn" data-tool="empty" title="Eraser — clear cell">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 20H7L3 16l9-9 8 8-4 4"/><path d="M6.5 13.5L13.5 6.5"/></svg>
+                Erase
+            </button>
+        </div>
+        <div class="toolbar-actions">
+            <button class="btn-glass" id="autoAssignBtn" title="Auto-label storage cells as sectors">Auto-assign Sectors</button>
+            <button class="btn-primary" id="saveLayoutBtn">Save Layout</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const WAREHOUSE_ID = {{ warehouse.id }};
+    const CSRF = '{{ csrf_token }}';
+</script>
+<script src="{% static 'js/warehouse-setup.js' %}"></script>
+{% endblock %}

@@ -1,0 +1,1669 @@
+{% extends "base_production.html" %}
+{% load static %}
+
+{% block title %}Stremet — Production Pipeline{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.min.js"></script>
+{% endblock %}
+
+{% block ui_content %}
+{% csrf_token %}
+<!-- Header -->
+<div class="mfg-header" style="padding: 16px 20px 8px;">
+    <div style="display:flex;align-items:center;gap:10px;">
+        <div class="mfg-title" style="font-size:1.1rem;">Production Pipeline</div>
+        <div class="mfg-subtitle" style="font-size:0.7rem;">Digital Twin &mdash; Real-Time Manufacturing</div>
+    </div>
+</div>
+
+<!-- Order Intake Bar -->
+<div class="mfg-order-bar glass" style="margin: 0 16px 12px; padding: 10px 14px;">
+    <select id="orderSelect" onchange="onOrderSelect()" style="max-width: 200px; font-size: 0.75rem;">
+        <option value="">Select Work Order...</option>
+    </select>
+    <span class="mfg-source-info" id="orderSourceInfo" style="font-size: 0.7rem;"></span>
+    <button class="btn-start-production" id="startBtn" onclick="startProduction()" disabled style="font-size: 0.72rem; padding: 5px 12px;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        Start
+    </button>
+    <div class="order-bar-spacer"></div>
+    <div class="mfg-order-stats" style="font-size: 0.68rem; gap: 8px;">
+        <span>Queued <strong id="queuedCount">0</strong></span>
+        <span>Processing <strong id="processingCount">0</strong></span>
+        <span>Done <strong id="completedCountStat">0</strong></span>
+        <span>Defects <strong id="defectCountStat">0</strong></span>
+    </div>
+</div>
+
+<!-- 3D Production Pipeline -->
+<div class="mfg-pipeline-container" id="pipelineContainer" style="margin: 0 16px; border-radius: 10px;">
+    <div class="pipeline-machine-labels" style="font-size: 0.6rem;"></div>
+</div>
+
+<!-- Machine Stats Strip -->
+<div class="mfg-machine-strip" id="machineStrip" style="padding: 8px 16px;"></div>
+
+<!-- Controls Row -->
+<div class="mfg-controls glass-subtle" style="margin: 8px 16px; padding: 10px 14px; gap: 12px;">
+    <div class="control-group">
+        <label style="font-size:0.68rem;">Error Sim</label>
+        <label class="toggle-switch">
+            <input type="checkbox" id="errorToggle" onchange="onErrorToggle()">
+            <span class="toggle-slider"></span>
+        </label>
+    </div>
+    <div class="control-group">
+        <label style="font-size:0.68rem;">Defect Rate</label>
+        <input type="range" min="5" max="50" value="15" id="defectRateSlider" oninput="document.getElementById('defectRateValue').textContent=this.value+'%'" style="width:70px;">
+        <span class="control-value" id="defectRateValue" style="font-size:0.68rem;">15%</span>
+    </div>
+    <div class="control-group">
+        <label style="font-size:0.68rem;">Speed</label>
+        <button class="btn-speed-preset" onclick="setSpeed(0.5)" style="font-size:0.65rem;padding:2px 6px;">0.5x</button>
+        <button class="btn-speed-preset" onclick="setSpeed(1)" style="font-size:0.65rem;padding:2px 6px;">1x</button>
+        <button class="btn-speed-preset" onclick="setSpeed(2)" style="font-size:0.65rem;padding:2px 6px;">2x</button>
+        <button class="btn-speed-preset" onclick="setSpeed(5)" style="font-size:0.65rem;padding:2px 6px;">5x</button>
+        <span class="control-value" id="speedValue" style="font-size:0.68rem;">2x</span>
+    </div>
+    <div class="control-group">
+        <label style="font-size:0.68rem;">Auto Loop</label>
+        <label class="toggle-switch">
+            <input type="checkbox" id="infiniteToggle" onchange="onInfiniteToggle()">
+            <span class="toggle-slider" style="background:rgba(0,0,0,0.12);"></span>
+        </label>
+    </div>
+    <div class="controls-spacer"></div>
+    <button class="btn-pause" id="pauseBtn" onclick="togglePause()" style="font-size:0.7rem;padding:4px 12px;">Pause</button>
+</div>
+
+<!-- Completed Products Table -->
+<div class="table-container" id="completedSection" style="margin: 8px 16px;">
+    <div class="table-header-bar">
+        <h3 style="font-size:0.82rem;">Completed Products</h3>
+        <span class="badge" id="completedBadge">0</span>
+    </div>
+    <div style="overflow-x:auto;">
+    <table class="data-table" style="font-size:0.72rem;">
+        <thead>
+            <tr>
+                <th style="width:24px;"></th>
+                <th>Product ID</th>
+                <th>Product</th>
+                <th>Material</th>
+                <th>Source Batch</th>
+                <th>Dimensions</th>
+                <th>Processing</th>
+                <th>Quality</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody id="completedBody"></tbody>
+    </table>
+    </div>
+</div>
+
+<!-- Defect Log -->
+<div class="table-container mfg-defect-log" id="defectSection" style="display:none; margin: 8px 16px;">
+    <div class="table-header-bar">
+        <h3 style="font-size:0.82rem;">Defect Log</h3>
+        <span class="badge badge-error" id="defectBadge">0</span>
+    </div>
+    <div style="overflow-x:auto;">
+    <table class="data-table" style="font-size:0.72rem;">
+        <thead>
+            <tr>
+                <th>Product ID</th>
+                <th>Failed At</th>
+                <th>Machine</th>
+                <th>Defect Type</th>
+                <th>Root Cause</th>
+                <th>Material</th>
+                <th>Time</th>
+            </tr>
+        </thead>
+        <tbody id="defectBody"></tbody>
+    </table>
+    </div>
+</div>
+
+<!-- Scrap Log -->
+<div class="table-container" id="scrapSection" style="margin: 8px 16px 20px;">
+    <div class="table-header-bar">
+        <h3 style="font-size:0.82rem;">Scrap Log</h3>
+        <span class="badge" id="scrapBadge">0</span>
+    </div>
+    <div style="overflow-x:auto;">
+    <table class="data-table" style="font-size:0.72rem;">
+        <thead>
+            <tr>
+                <th style="width:24px;"></th>
+                <th>Order ID</th>
+                <th>Material</th>
+                <th>Source Batch</th>
+                <th>Stages</th>
+                <th>Avg Scrap Rate</th>
+                <th>Time</th>
+            </tr>
+        </thead>
+        <tbody id="scrapBody"></tbody>
+    </table>
+    </div>
+</div>
+
+<!-- Machine History Modal -->
+<div class="mfg-modal-overlay" id="machineModalOverlay">
+    <div class="mfg-modal glass">
+        <div class="mfg-modal-header">
+            <h3 id="machineModalTitle">Machine History</h3>
+            <button class="mfg-modal-close" onclick="closeMachineHistory()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div id="machineModalBody"></div>
+    </div>
+</div>
+
+<!-- Product Detail Modal -->
+<div class="mfg-modal-overlay" id="productModalOverlay">
+    <div class="mfg-modal glass">
+        <div class="mfg-modal-header">
+            <h3 id="productModalTitle">Product History</h3>
+            <button class="mfg-modal-close" onclick="closeProductModal()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div id="productModalBody"></div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// =============================================
+// DATA LAYER
+// =============================================
+var materials = JSON.parse('{{ materials_json|safe }}');
+var deliveries = JSON.parse('{{ deliveries_json|safe }}');
+
+var MACHINE_SPECS = JSON.parse('{{ machine_specs_json|escapejs }}');
+
+var DEFECT_TYPES = MACHINE_SPECS.map(function(s) { return s.defect_types || ['General defect']; });
+var DEFECT_CAUSES = MACHINE_SPECS.map(function(s) { return s.defect_causes || ['Unknown cause']; });
+
+var PRODUCTS = [
+    'HR Coil 2.5mm', 'CR Sheet 1.2mm', 'GP Sheet 0.5mm', 'GI Sheet 0.8mm',
+    'HR Plate 10mm', 'MS Angle 50x50', 'SS Sheet 1.5mm', 'TMT Bar Fe-500',
+    'Copper Strip 2mm', 'Aluminium Sheet 3mm', 'MS Flat 6mm', 'GI Pipe 25mm'
+];
+
+var SCRAP_RATES = MACHINE_SPECS.map(function(s) { return s.scrap_rate || { min: 0.5, max: 2.0, type: 'General waste' }; });
+var scrapLog = [];
+
+// =============================================
+// STATE
+// =============================================
+var orders = [];
+var activeProducts = [];
+var completedProducts = [];
+var defectLog = [];
+var machineProductCounts = new Array(MACHINE_SPECS.length).fill(0);
+var machineProcessing = new Array(MACHINE_SPECS.length).fill(false);
+var machineHealthCache = {};
+var paused = false;
+var orderCounter = 1000;
+
+function generateOrders() {
+    var available = deliveries.filter(function(d) { return (d.qty_int || 0) > 0; });
+    if (available.length === 0) return;
+
+    var count = 0;
+    for (var di = 0; di < available.length && count < 12; di++) {
+        var del = available[di];
+        var palletsAvail = del.qty_int || 1;
+        var ordersFromThis = Math.min(palletsAvail, 12 - count);
+        for (var pi = 0; pi < ordersFromThis; pi++) {
+            orders.push({
+                id: 'WO-' + (++orderCounter),
+                product: PRODUCTS[count % PRODUCTS.length],
+                batch: del.batch_id,
+                materialId: del.material_id || null,
+                materialName: del.material_name || 'Steel',
+                materialCategory: '',
+                deliveryId: del.id,
+                deliveryBatch: del.batch_id,
+                manufacturer: del.manufacturer || 'Unknown',
+                warehouseName: del.warehouse_name || '',
+                dimensions: del.size || ((1 + Math.random() * 3).toFixed(1) + 'mm \u00d7 ' + (800 + Math.floor(Math.random() * 700)) + 'mm'),
+                quantity: 1,
+                status: 'queued'
+            });
+            count++;
+        }
+    }
+}
+
+// =============================================
+// MACHINE STATS CARDS (DOM)
+// =============================================
+function buildMachineCards() {
+    var strip = document.getElementById('machineStrip');
+    strip.innerHTML = '';
+    MACHINE_SPECS.forEach(function(spec, i) {
+        var card = document.createElement('div');
+        card.className = 'mfg-machine-card glass-subtle';
+        card.id = 'machineCard' + i;
+        card.onclick = function() { openMachineHistory(i); };
+        var statsHTML = spec.metrics.map(function(m) {
+            return '<div class="stat-row"><span class="stat-label">' + m.label + '</span><span class="stat-value" id="mstat-' + i + '-' + m.key + '">' + m.idle.toFixed(1) + ' ' + m.unit + '</span></div>';
+        }).join('');
+        card.innerHTML =
+            '<div class="machine-card-header">' +
+                '<div class="machine-status-dot"></div>' +
+                '<div><div class="machine-card-name">' + spec.name + '</div>' +
+                '<div class="machine-card-id">' + spec.id + '</div></div>' +
+            '</div>' +
+            '<div class="machine-stats">' + statsHTML + '</div>' +
+            '<div class="machine-load-bar"><div class="machine-load-fill" id="mload-' + i + '"></div></div>' +
+            '<div class="machine-products-count" id="mprod-' + i + '">0 products processed</div>';
+        strip.appendChild(card);
+    });
+}
+
+function updateMachineStats() {
+    MACHINE_SPECS.forEach(function(spec, i) {
+        var isActive = machineProcessing[i];
+        spec.metrics.forEach(function(m) {
+            var el = document.getElementById('mstat-' + i + '-' + m.key);
+            if (!el) return;
+            var val;
+            if (isActive) {
+                val = m.range[0] + Math.random() * (m.range[1] - m.range[0]);
+                val += (Math.random() - 0.5) * 2 * m.jitter;
+            } else {
+                val = m.idle + (Math.random() - 0.5) * m.jitter * 0.1;
+            }
+            if (Math.abs(val) >= 100) el.textContent = Math.round(val) + ' ' + m.unit;
+            else el.textContent = val.toFixed(1) + ' ' + m.unit;
+        });
+        var loadEl = document.getElementById('mload-' + i);
+        if (loadEl) loadEl.style.width = isActive ? (60 + Math.random() * 35) + '%' : '0%';
+        var card = document.getElementById('machineCard' + i);
+        if (card) {
+            card.classList.toggle('machine-active', isActive);
+        }
+        var prodEl = document.getElementById('mprod-' + i);
+        if (prodEl) prodEl.textContent = machineProductCounts[i] + ' products processed';
+    });
+}
+
+// =============================================
+// ORDER UI
+// =============================================
+function populateOrderSelect() {
+    var sel = document.getElementById('orderSelect');
+    sel.innerHTML = '<option value="">Select Work Order...</option>';
+    orders.forEach(function(o) {
+        if (o.status !== 'queued') return;
+        var opt = document.createElement('option');
+        opt.value = o.id;
+        opt.textContent = o.id + ' \u2014 ' + o.product + (o.warehouseName ? ' [' + o.warehouseName + ']' : '') + ' (' + o.quantity + ' pcs)';
+        sel.appendChild(opt);
+    });
+    updateOrderStats();
+}
+
+function onOrderSelect() {
+    var sel = document.getElementById('orderSelect');
+    var btn = document.getElementById('startBtn');
+    var info = document.getElementById('orderSourceInfo');
+    var order = orders.find(function(o) { return o.id === sel.value; });
+    if (order) {
+        btn.disabled = false;
+        info.innerHTML = 'Material: ' + order.materialName +
+            (order.deliveryBatch ? ' &middot; Batch: ' + order.deliveryBatch : '') +
+            ' &middot; Vendor: ' + order.manufacturer +
+            (order.warehouseName ? ' &middot; Warehouse: ' + order.warehouseName : '');
+    } else {
+        btn.disabled = true;
+        info.innerHTML = '';
+    }
+}
+
+function updateOrderStats() {
+    var q = 0, p = 0;
+    orders.forEach(function(o) { if (o.status === 'queued') q++; if (o.status === 'processing') p++; });
+    document.getElementById('queuedCount').textContent = q;
+    document.getElementById('processingCount').textContent = p;
+    document.getElementById('completedCountStat').textContent = completedProducts.length;
+    document.getElementById('defectCountStat').textContent = defectLog.length;
+    document.getElementById('completedBadge').textContent = completedProducts.length;
+    document.getElementById('defectBadge').textContent = defectLog.length;
+}
+
+// =============================================
+// DATABASE PERSISTENCE
+// =============================================
+function getCsrfToken() {
+    var el = document.querySelector('[name=csrfmiddlewaretoken]');
+    return el ? el.value : '';
+}
+
+function saveOrderToDb(data) {
+    fetch('/api/save-manufacturing-order/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+        body: JSON.stringify(data)
+    }).catch(function(err) { console.error('Save failed:', err); });
+}
+
+function consumePallet(order) {
+    if (!order.deliveryId) return;
+    fetch('/api/consume-pallet/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+        body: JSON.stringify({ delivery_id: order.deliveryId, order_id: order.id })
+    }).then(function(r) { return r.json(); }).then(function(data) {
+        if (!data.success) return;
+        var del = deliveries.find(function(d) { return d.id === order.deliveryId; });
+        if (del) {
+            del.qty_int = (del.qty_int || 1) - 1;
+            if (del.qty_int <= 0) {
+                deliveries = deliveries.filter(function(d) { return d.id !== order.deliveryId; });
+            }
+        }
+    }).catch(function(err) { console.error('Consume pallet failed:', err); });
+}
+
+function incrementMachineUsage(machineId) {
+    fetch('/api/increment-machine-usage/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+        body: JSON.stringify({ machine_id: machineId })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data && data.machine_id) {
+            machineHealthCache[data.machine_id] = {
+                usage_count: data.usage_count,
+                failure_threshold: data.failure_threshold,
+                health: data.health,
+                failure_prob: data.failure_prob,
+                status: data.status
+            };
+        }
+    })
+    .catch(function(err) { console.error('Machine usage increment failed:', err); });
+}
+
+function fetchInitialMachineHealth() {
+    fetch('/api/machine-health-data/')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var list = data.machines || data;
+            if (Array.isArray(list)) {
+                list.forEach(function(m) {
+                    machineHealthCache[m.machine_id] = {
+                        usage_count: m.usage_count,
+                        failure_threshold: m.failure_threshold,
+                        health: m.health,
+                        failure_prob: m.failure_prob,
+                        status: m.status
+                    };
+                });
+            }
+        })
+        .catch(function(err) { console.error('Initial health fetch failed:', err); });
+}
+
+function isMachineOverdue(machineIndex) {
+    var machineId = MACHINE_SPECS[machineIndex].id;
+    var h = machineHealthCache[machineId];
+    if (!h) return false;
+    return h.usage_count >= h.failure_threshold;
+}
+
+// =============================================
+// PRODUCTION FLOW
+// =============================================
+var ProductState = { MOVING: 1, PROCESSING: 2, COMPLETED: 3, REJECTED: 4 };
+
+function startProduction() {
+    var sel = document.getElementById('orderSelect');
+    var order = orders.find(function(o) { return o.id === sel.value; });
+    if (!order) return;
+    order.status = 'processing';
+
+    var mesh = createProductMesh();
+    mesh.position.set(PIPELINE_START_X, 0.55, 0);
+    pipelineScene.add(mesh);
+
+    activeProducts.push({
+        mesh: mesh,
+        order: order,
+        state: ProductState.MOVING,
+        currentMachine: -1,
+        targetMachine: 0,
+        progress: 0,
+        processTimer: 0,
+        startTime: Date.now(),
+        stageData: [],
+        stageTimestamps: [],
+        totalEnergy: 0,
+        totalScrap: 0,
+        rejectZ: 0,
+    });
+
+    sel.value = '';
+    onOrderSelect();
+    populateOrderSelect();
+}
+
+function togglePause() {
+    paused = !paused;
+    document.getElementById('pauseBtn').textContent = paused ? 'Resume' : 'Pause';
+}
+
+function onErrorToggle() {
+    var on = document.getElementById('errorToggle').checked;
+    if (on) document.getElementById('defectSection').style.display = 'block';
+}
+
+// =============================================
+// THREE.JS — PRODUCTION PIPELINE SCENE
+// =============================================
+var pipelineScene, pipelineCamera, pipelineRenderer, pipelineControls;
+var pipelineClock = new THREE.Clock();
+var machineMeshes = [];
+var machineAnimParts = {};
+var sparkSystem, sparkPositions, sparkVelocities;
+
+var MACHINE_X = MACHINE_SPECS.map(function(_, i) {
+    var total = MACHINE_SPECS.length;
+    var spacing = 8;
+    var offset = -(total - 1) * spacing / 2;
+    return offset + i * spacing;
+});
+var CONVEYOR_Y = 0.15;
+var PIPELINE_START_X = (MACHINE_X[0] || -16) - 8;
+var PIPELINE_END_X = (MACHINE_X[MACHINE_X.length - 1] || 16) + 8;
+
+function initPipelineScene() {
+    var container = document.getElementById('pipelineContainer');
+    var w = container.clientWidth, h = container.clientHeight;
+
+    pipelineScene = new THREE.Scene();
+    pipelineScene.background = new THREE.Color(0xf5f5f7);
+    var pipelineWidth = PIPELINE_END_X - PIPELINE_START_X;
+    var camZ = Math.max(32, pipelineWidth * 0.8);
+    var fogFar = camZ * 2;
+    pipelineScene.fog = new THREE.Fog(0xf5f5f7, camZ * 0.6, fogFar);
+
+    pipelineCamera = new THREE.PerspectiveCamera(32, w / h, 0.1, 200);
+    pipelineCamera.position.set(0, 18, camZ);
+    pipelineCamera.lookAt(0, 1, 0);
+
+    pipelineRenderer = new THREE.WebGLRenderer({ antialias: true });
+    pipelineRenderer.setSize(w, h);
+    pipelineRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    pipelineRenderer.shadowMap.enabled = true;
+    pipelineRenderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    pipelineRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+    pipelineRenderer.toneMappingExposure = 0.95;
+    container.insertBefore(pipelineRenderer.domElement, container.firstChild);
+
+    pipelineControls = new THREE.OrbitControls(pipelineCamera, pipelineRenderer.domElement);
+    pipelineControls.enableDamping = true;
+    pipelineControls.dampingFactor = 0.08;
+    pipelineControls.maxPolarAngle = Math.PI / 2.15;
+    pipelineControls.minDistance = 12;
+    pipelineControls.maxDistance = 55;
+    pipelineControls.target.set(0, 2, 0);
+
+    // Lights
+    pipelineScene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    var dir = new THREE.DirectionalLight(0xffffff, 0.85);
+    dir.position.set(10, 20, 12);
+    dir.castShadow = true;
+    dir.shadow.mapSize.set(2048, 2048);
+    dir.shadow.camera.left = -30; dir.shadow.camera.right = 30;
+    dir.shadow.camera.top = 15; dir.shadow.camera.bottom = -10;
+    dir.shadow.bias = -0.0005;
+    pipelineScene.add(dir);
+    pipelineScene.add(new THREE.DirectionalLight(0xffffff, 0.15).translateX(-8).translateY(6).translateZ(-10));
+
+    // Ground
+    var gnd = new THREE.Mesh(
+        new THREE.PlaneGeometry(80, 40),
+        new THREE.MeshStandardMaterial({ color: 0xeeeef0, roughness: 0.95 })
+    );
+    gnd.rotation.x = -Math.PI / 2;
+    gnd.receiveShadow = true;
+    pipelineScene.add(gnd);
+
+    buildConveyor();
+    buildMachines();
+    buildSparks();
+
+    window.addEventListener('resize', onPipelineResize);
+    // ResizeObserver for mode toggle (agent/UI)
+    if (typeof ResizeObserver !== 'undefined') {
+        new ResizeObserver(onPipelineResize).observe(container);
+    }
+    animatePipeline();
+}
+
+function onPipelineResize() {
+    var c = document.getElementById('pipelineContainer');
+    if (!c || !pipelineRenderer) return;
+    var w = c.clientWidth, h = c.clientHeight;
+    pipelineCamera.aspect = w / h;
+    pipelineCamera.updateProjectionMatrix();
+    pipelineRenderer.setSize(w, h);
+}
+
+// ---- Conveyor ----
+function buildConveyor() {
+    var conveyorLen = PIPELINE_END_X - PIPELINE_START_X + 4;
+    var conveyorCenter = (PIPELINE_START_X + PIPELINE_END_X) / 2;
+    var railMat = new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 0.3, metalness: 0.85 });
+    var railGeo = new THREE.BoxGeometry(conveyorLen, 0.07, 0.12);
+    [-1.1, 1.1].forEach(function(z) {
+        var r = new THREE.Mesh(railGeo, railMat);
+        r.position.set(conveyorCenter, CONVEYOR_Y, z);
+        r.castShadow = true;
+        pipelineScene.add(r);
+    });
+    var rollerGeo = new THREE.CylinderGeometry(0.05, 0.05, 2.0, 8);
+    var rollerMat = new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 0.4, metalness: 0.6 });
+    for (var x = PIPELINE_START_X; x <= PIPELINE_END_X; x += 1.2) {
+        var rl = new THREE.Mesh(rollerGeo, rollerMat);
+        rl.rotation.x = Math.PI / 2;
+        rl.position.set(x, CONVEYOR_Y, 0);
+        pipelineScene.add(rl);
+    }
+    var arrowMat = new THREE.MeshStandardMaterial({ color: 0x4a9eff, roughness: 0.5, metalness: 0.3 });
+    var triShape = new THREE.Shape();
+    triShape.moveTo(0, 0); triShape.lineTo(-0.4, -0.25); triShape.lineTo(-0.4, 0.25); triShape.closePath();
+    var triGeo = new THREE.ExtrudeGeometry(triShape, { depth: 0.04, bevelEnabled: false });
+    var inArr = new THREE.Mesh(triGeo, arrowMat);
+    inArr.rotation.x = -Math.PI / 2;
+    inArr.position.set(PIPELINE_START_X + 2, 0.02, 0);
+    pipelineScene.add(inArr);
+    var outArr = new THREE.Mesh(triGeo, arrowMat);
+    outArr.rotation.x = -Math.PI / 2;
+    outArr.position.set(PIPELINE_END_X - 2, 0.02, 0);
+    pipelineScene.add(outArr);
+}
+
+// ---- Machine Builders by visual_type ----
+function buildUncoiler(bodyMat, frameMat, darkMat, idx) {
+    var g = new THREE.Group();
+    var coil = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 2, 32), bodyMat);
+    coil.rotation.z = Math.PI / 2; coil.position.set(-1, 2.5, 0); coil.castShadow = true; g.add(coil);
+    machineAnimParts[idx] = { coil: coil };
+    var wrap = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 1.8, 32),
+        new THREE.MeshStandardMaterial({ color: 0x999999, roughness: 0.3, metalness: 0.7 }));
+    wrap.rotation.z = Math.PI / 2; wrap.position.set(-1, 2.5, 0); g.add(wrap);
+    [-1.3, 1.3].forEach(function(z) {
+        var u = new THREE.Mesh(new THREE.BoxGeometry(0.15, 4.2, 0.15), frameMat);
+        u.position.set(-1, 2.1, z); u.castShadow = true; g.add(u);
+    });
+    var guide = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.08, 2), frameMat);
+    guide.position.set(1, 0.8, 0); guide.rotation.z = -0.12; g.add(guide);
+    var base = new THREE.Mesh(new THREE.BoxGeometry(4, 0.3, 3), darkMat);
+    base.position.set(0, 0.15, 0); base.castShadow = true; base.receiveShadow = true; g.add(base);
+    return g;
+}
+
+function buildShearing(bodyMat, frameMat, darkMat, idx) {
+    var g = new THREE.Group();
+    var housing = new THREE.Mesh(new THREE.BoxGeometry(3, 2.2, 3), bodyMat);
+    housing.position.set(0, 1.1, 0); housing.castShadow = true; g.add(housing);
+    var blade = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.25, 2.6), darkMat);
+    blade.position.set(0, 2.8, 0); blade.castShadow = true; g.add(blade);
+    machineAnimParts[idx] = { blade: blade, baseY: 2.8 };
+    [[-1.2, -1.2], [-1.2, 1.2], [1.2, -1.2], [1.2, 1.2]].forEach(function(p) {
+        var col = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 3.5, 8), frameMat);
+        col.position.set(p[0], 1.75, p[1]); g.add(col);
+    });
+    var top = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.2, 3.2), frameMat);
+    top.position.set(0, 3.5, 0); g.add(top);
+    return g;
+}
+
+function buildPressBrake(bodyMat, frameMat, darkMat, idx) {
+    var g = new THREE.Group();
+    [-1.6, 1.6].forEach(function(x) {
+        var u = new THREE.Mesh(new THREE.BoxGeometry(0.3, 5, 2.8), frameMat);
+        u.position.set(x, 2.5, 0); u.castShadow = true; g.add(u);
+    });
+    var beam = new THREE.Mesh(new THREE.BoxGeometry(3.5, 0.5, 2.8), frameMat);
+    beam.position.set(0, 5.1, 0); g.add(beam);
+    var ram = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.4, 2.4), darkMat);
+    ram.position.set(0, 3.5, 0); ram.castShadow = true; g.add(ram);
+    machineAnimParts[idx] = { ram: ram, baseY: 3.5 };
+    var die = new THREE.Mesh(new THREE.BoxGeometry(3, 0.6, 2.8), bodyMat);
+    die.position.set(0, 0.3, 0); die.receiveShadow = true; g.add(die);
+    return g;
+}
+
+function buildWelding(bodyMat, frameMat, darkMat, idx) {
+    var g = new THREE.Group();
+    var table = new THREE.Mesh(new THREE.BoxGeometry(3, 1.2, 3), bodyMat);
+    table.position.set(0, 0.6, 0); table.castShadow = true; g.add(table);
+    var armBase = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.4, 1.5, 16), frameMat);
+    armBase.position.set(-0.8, 1.95, -0.8); g.add(armBase);
+    var arm = new THREE.Mesh(new THREE.BoxGeometry(0.15, 2.2, 0.15), frameMat);
+    arm.position.set(-0.8, 3.8, -0.8); g.add(arm);
+    var tipMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x4a9eff, emissiveIntensity: 0 });
+    var tip = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 12), tipMat);
+    tip.position.set(0, 1.5, 0); g.add(tip);
+    machineAnimParts[idx] = { tip: tip, tipMat: tipMat };
+    var wl = new THREE.PointLight(0x4a9eff, 0, 6);
+    wl.position.set(0, 2, 0); g.add(wl);
+    machineAnimParts[idx].light = wl;
+    return g;
+}
+
+function buildQCInspection(bodyMat, frameMat, darkMat, idx) {
+    var g = new THREE.Group();
+    var tunnelMat = new THREE.MeshStandardMaterial({ color: 0x4a4a4a, roughness: 0.4, metalness: 0.7, side: THREE.DoubleSide });
+    var top = new THREE.Mesh(new THREE.BoxGeometry(4, 0.15, 3), tunnelMat);
+    top.position.set(0, 3.2, 0); top.castShadow = true; g.add(top);
+    var bottom = new THREE.Mesh(new THREE.BoxGeometry(4, 0.15, 3), tunnelMat);
+    bottom.position.set(0, 0.15, 0); bottom.receiveShadow = true; g.add(bottom);
+    var left = new THREE.Mesh(new THREE.BoxGeometry(4, 3.05, 0.15), tunnelMat);
+    left.position.set(0, 1.675, -1.425); left.castShadow = true; g.add(left);
+    var right = new THREE.Mesh(new THREE.BoxGeometry(4, 3.05, 0.15), tunnelMat);
+    right.position.set(0, 1.675, 1.425); right.castShadow = true; g.add(right);
+    var back = new THREE.Mesh(new THREE.BoxGeometry(0.15, 3.05, 3), tunnelMat);
+    back.position.set(2, 1.675, 0); g.add(back);
+    var glowMat = new THREE.MeshBasicMaterial({ color: 0xff6633, transparent: true, opacity: 0 });
+    var glow = new THREE.Mesh(new THREE.BoxGeometry(3.5, 2.5, 2.5), glowMat);
+    glow.position.set(0, 1.675, 0); g.add(glow);
+    machineAnimParts[idx] = { glow: glow, glowMat: glowMat };
+    var qcMat = new THREE.MeshStandardMaterial({ color: 0x666666, emissive: 0x000000, emissiveIntensity: 0 });
+    var qcLight = new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 12), qcMat);
+    qcLight.position.set(0, 3.5, 0); g.add(qcLight);
+    machineAnimParts[idx].qcLight = qcLight;
+    machineAnimParts[idx].qcMat = qcMat;
+    return g;
+}
+
+function buildGenericMachine(bodyMat, frameMat, darkMat, idx) {
+    var g = new THREE.Group();
+    var housing = new THREE.Mesh(new THREE.BoxGeometry(3, 2, 3), bodyMat);
+    housing.position.set(0, 1, 0); housing.castShadow = true; g.add(housing);
+    var gearMat = new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 0.3, metalness: 0.8 });
+    var gear = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 0.3, 16), gearMat);
+    gear.position.set(0, 2.3, 0); gear.castShadow = true; g.add(gear);
+    var panel = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.2, 0.1), frameMat);
+    panel.position.set(0, 1.6, 1.55); g.add(panel);
+    var base = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.25, 3.4), darkMat);
+    base.position.set(0, 0.125, 0); base.receiveShadow = true; g.add(base);
+    machineAnimParts[idx] = { gear: gear };
+    return g;
+}
+
+// ---- Machines ----
+function buildMachines() {
+    var bodyMat = new THREE.MeshStandardMaterial({ color: 0x4a4a4a, roughness: 0.35, metalness: 0.8 });
+    var frameMat = new THREE.MeshStandardMaterial({ color: 0x5a5a5a, roughness: 0.4, metalness: 0.7 });
+    var darkMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.3, metalness: 0.85 });
+
+    var builders = {
+        'uncoiler': buildUncoiler,
+        'shearing': buildShearing,
+        'press_brake': buildPressBrake,
+        'welding': buildWelding,
+        'qc_inspection': buildQCInspection,
+        'generic': buildGenericMachine,
+    };
+
+    MACHINE_SPECS.forEach(function(spec, i) {
+        var buildFn = builders[spec.visual_type] || buildGenericMachine;
+        var g = buildFn(bodyMat, frameMat, darkMat, i);
+        g.position.set(MACHINE_X[i], 0, 0);
+        pipelineScene.add(g);
+        machineMeshes.push(g);
+    });
+}
+
+// ---- Spark Particles ----
+var SPARK_COUNT = 80;
+function buildSparks() {
+    sparkPositions = new Float32Array(SPARK_COUNT * 3);
+    sparkVelocities = [];
+    for (var i = 0; i < SPARK_COUNT; i++) sparkVelocities.push({ x: 0, y: 0, z: 0 });
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(sparkPositions, 3));
+    var mat = new THREE.PointsMaterial({
+        color: 0xffaa33, size: 0.09, transparent: true, opacity: 0.9,
+        blending: THREE.AdditiveBlending, depthWrite: false
+    });
+    sparkSystem = new THREE.Points(geo, mat);
+    sparkSystem.visible = false;
+    pipelineScene.add(sparkSystem);
+}
+
+function emitSparks() {
+    sparkSystem.visible = true;
+    var weldIdx = MACHINE_SPECS.findIndex(function(s) { return s.visual_type === 'welding'; });
+    var ox = weldIdx >= 0 ? MACHINE_X[weldIdx] : 0, oy = 2, oz = 0;
+    for (var i = 0; i < SPARK_COUNT; i++) {
+        sparkPositions[i*3] = ox + (Math.random()-0.5)*0.3;
+        sparkPositions[i*3+1] = oy + Math.random()*0.3;
+        sparkPositions[i*3+2] = oz + (Math.random()-0.5)*0.3;
+        sparkVelocities[i] = {
+            x: (Math.random()-0.5)*5,
+            y: Math.random()*4 + 1,
+            z: (Math.random()-0.5)*5
+        };
+    }
+    sparkSystem.geometry.attributes.position.needsUpdate = true;
+}
+
+function updateSparks(dt) {
+    if (!sparkSystem.visible) return;
+    var alive = false;
+    for (var i = 0; i < SPARK_COUNT; i++) {
+        sparkVelocities[i].y -= 12 * dt;
+        sparkPositions[i*3] += sparkVelocities[i].x * dt;
+        sparkPositions[i*3+1] += sparkVelocities[i].y * dt;
+        sparkPositions[i*3+2] += sparkVelocities[i].z * dt;
+        if (sparkPositions[i*3+1] > 0) alive = true;
+    }
+    sparkSystem.geometry.attributes.position.needsUpdate = true;
+    if (!alive) sparkSystem.visible = false;
+}
+
+// ---- Product Mesh ----
+function createProductMesh() {
+    var geo = new THREE.BoxGeometry(1.6, 0.1, 1.4);
+    var mat = new THREE.MeshStandardMaterial({ color: 0xbbbbbb, roughness: 0.25, metalness: 0.85 });
+    var mesh = new THREE.Mesh(geo, mat);
+    mesh.castShadow = true;
+    return mesh;
+}
+
+// =============================================
+// ANIMATION LOOP
+// =============================================
+var animFrameId;
+var sparkTimer = 0;
+
+function animatePipeline() {
+    animFrameId = requestAnimationFrame(animatePipeline);
+    var rawDelta = pipelineClock.getDelta();
+    if (paused) { pipelineControls.update(); pipelineRenderer.render(pipelineScene, pipelineCamera); return; }
+
+    var speed = currentSpeed || 2;
+    var dt = rawDelta * speed;
+
+    var toRemove = [];
+    activeProducts.forEach(function(p, idx) {
+        if (p.state === ProductState.MOVING) {
+            var targetX = p.targetMachine >= 0 && p.targetMachine < MACHINE_SPECS.length ? MACHINE_X[p.targetMachine] : PIPELINE_END_X;
+            var dx = targetX - p.mesh.position.x;
+            var step = 10 * dt;
+            if (Math.abs(dx) < step) {
+                p.mesh.position.x = targetX;
+                if (p.targetMachine >= MACHINE_SPECS.length) {
+                    p.state = ProductState.COMPLETED;
+                    toRemove.push(idx);
+                    onProductCompleted(p);
+                } else {
+                    p.state = ProductState.PROCESSING;
+                    p.currentMachine = p.targetMachine;
+                    p.processTimer = 0;
+                    machineProcessing[p.currentMachine] = true;
+                    p.stageTimestamps.push(new Date().toLocaleTimeString());
+                }
+            } else {
+                p.mesh.position.x += Math.sign(dx) * step;
+            }
+        } else if (p.state === ProductState.PROCESSING) {
+            var processDuration = 2.0;
+            p.processTimer += dt;
+            var t = Math.min(p.processTimer / processDuration, 1);
+
+            animateMachineProcessing(p.currentMachine, t);
+
+            if (p.processTimer >= processDuration) {
+                var stageSnap = captureStageData(p.currentMachine);
+                p.stageData.push(stageSnap);
+                p.totalEnergy += parseFloat(stageSnap.energy) || 0;
+
+                var sr = SCRAP_RATES[p.currentMachine];
+                var scrapVal = sr.min + Math.random() * (sr.max - sr.min);
+                p.totalScrap += scrapVal;
+                stageSnap.scrap = scrapVal.toFixed(2);
+                stageSnap.scrapType = sr.type;
+                if (!p.scrapEvents) p.scrapEvents = [];
+                p.scrapEvents.push({
+                    machine_name: MACHINE_SPECS[p.currentMachine].name,
+                    machine_id: MACHINE_SPECS[p.currentMachine].id,
+                    machine_index: p.currentMachine,
+                    scrap_rate: parseFloat(scrapVal.toFixed(2)),
+                    scrap_type: sr.type
+                });
+
+                machineProductCounts[p.currentMachine]++;
+                incrementMachineUsage(MACHINE_SPECS[p.currentMachine].id);
+                machineProcessing[p.currentMachine] = false;
+
+                var machineOverdue = isMachineOverdue(p.currentMachine);
+                var errorOn = document.getElementById('errorToggle').checked;
+                var defectRate = parseInt(document.getElementById('defectRateSlider').value) / 100;
+                if (machineOverdue || (errorOn && Math.random() < defectRate * 0.3)) {
+                    p.state = ProductState.REJECTED;
+                    p.rejectZ = 0;
+                    p.mesh.material.color.set(0xff4444);
+                    p.mesh.material.emissive = new THREE.Color(0xff0000);
+                    p.mesh.material.emissiveIntensity = 0.3;
+                    onProductDefect(p);
+                    var card = document.getElementById('machineCard' + p.currentMachine);
+                    if (card) { card.classList.add('machine-flash', 'machine-error'); setTimeout(function() { card.classList.remove('machine-flash', 'machine-error'); }, 1000); }
+                } else {
+                    p.state = ProductState.MOVING;
+                    p.targetMachine = p.currentMachine + 1;
+                }
+            }
+        } else if (p.state === ProductState.REJECTED) {
+            p.rejectZ += 6 * dt;
+            p.mesh.position.z += 6 * dt;
+            p.mesh.position.y += 2 * dt;
+            p.mesh.rotation.x += 3 * dt;
+            if (p.rejectZ > 10) {
+                toRemove.push(idx);
+            }
+        }
+    });
+
+    toRemove.sort(function(a, b) { return b - a; });
+    toRemove.forEach(function(idx) {
+        var p = activeProducts[idx];
+        pipelineScene.remove(p.mesh);
+        p.mesh.geometry.dispose();
+        p.mesh.material.dispose();
+        activeProducts.splice(idx, 1);
+    });
+
+    resetIdleMachines();
+
+    updateSparks(rawDelta * speed);
+    if (machineProcessing[3]) {
+        sparkTimer += dt;
+        if (sparkTimer > 0.4) { emitSparks(); sparkTimer = 0; }
+    }
+
+    pipelineControls.update();
+    pipelineRenderer.render(pipelineScene, pipelineCamera);
+}
+
+function animateMachineProcessing(machineIdx, t) {
+    var parts = machineAnimParts[machineIdx];
+    if (!parts) return;
+    var vtype = (MACHINE_SPECS[machineIdx] || {}).visual_type || 'generic';
+
+    switch (vtype) {
+        case 'uncoiler':
+            if (parts.coil) parts.coil.rotation.z += 0.05;
+            break;
+        case 'shearing':
+            if (parts.blade) {
+                var chop = t < 0.5 ? t * 2 : 2 - t * 2;
+                parts.blade.position.y = parts.baseY - chop * 1.2;
+            }
+            break;
+        case 'press_brake':
+            if (parts.ram) {
+                var press;
+                if (t < 0.4) press = t / 0.4;
+                else if (t < 0.7) press = 1;
+                else press = 1 - (t - 0.7) / 0.3;
+                parts.ram.position.y = parts.baseY - press * 2.2;
+            }
+            break;
+        case 'welding':
+            if (parts.tipMat) parts.tipMat.emissiveIntensity = 0.5 + Math.sin(t * 20) * 0.4;
+            if (parts.light) parts.light.intensity = 1.5 + Math.sin(t * 15) * 1;
+            if (parts.tip) { parts.tip.position.x = Math.sin(t * 8) * 0.6; parts.tip.position.z = Math.cos(t * 6) * 0.4; }
+            break;
+        case 'qc_inspection':
+            if (parts.glowMat) parts.glowMat.opacity = 0.06 + Math.sin(t * 10) * 0.03;
+            if (parts.qcMat && t > 0.8) { parts.qcMat.emissive = new THREE.Color(0x34c759); parts.qcMat.emissiveIntensity = 0.8; }
+            break;
+        default:
+            if (parts.gear) parts.gear.rotation.y += 0.04;
+            break;
+    }
+}
+
+function resetIdleMachines() {
+    for (var i = 0; i < MACHINE_SPECS.length; i++) {
+        if (machineProcessing[i]) continue;
+        var parts = machineAnimParts[i];
+        if (!parts) continue;
+        var vtype = (MACHINE_SPECS[i] || {}).visual_type || 'generic';
+        switch (vtype) {
+            case 'shearing': if (parts.blade) parts.blade.position.y = parts.baseY; break;
+            case 'press_brake': if (parts.ram) parts.ram.position.y = parts.baseY; break;
+            case 'welding':
+                if (parts.tipMat) parts.tipMat.emissiveIntensity = 0;
+                if (parts.light) parts.light.intensity = 0;
+                if (parts.tip) { parts.tip.position.x = 0; parts.tip.position.z = 0; }
+                break;
+            case 'qc_inspection':
+                if (parts.glowMat) parts.glowMat.opacity = 0;
+                if (parts.qcMat) { parts.qcMat.emissive = new THREE.Color(0x000000); parts.qcMat.emissiveIntensity = 0; }
+                break;
+        }
+    }
+}
+
+function captureStageData(machineIdx) {
+    var spec = MACHINE_SPECS[machineIdx];
+    var snap = {};
+    spec.metrics.forEach(function(m) {
+        var val = m.range[0] + Math.random() * (m.range[1] - m.range[0]);
+        snap[m.label] = val.toFixed(Math.abs(val) >= 100 ? 0 : 1) + ' ' + m.unit;
+        if (m.key === 'energy') snap.energy = val.toFixed(1);
+        if (m.key === 'scrap') snap.scrap = val.toFixed(2);
+    });
+    return snap;
+}
+
+// =============================================
+// PRODUCT COMPLETION & DEFECT
+// =============================================
+function onProductCompleted(p) {
+    var elapsed = ((Date.now() - p.startTime) / 1000).toFixed(1);
+    p.order.status = 'completed';
+
+    var product = {
+        id: p.order.id,
+        product: p.order.product,
+        materialName: p.order.materialName,
+        materialId: p.order.materialId,
+        deliveryBatch: p.order.deliveryBatch,
+        deliveryId: p.order.deliveryId,
+        manufacturer: p.order.manufacturer,
+        dimensions: p.order.dimensions,
+        processingTime: elapsed,
+        stages: p.stageData,
+        stageTimestamps: p.stageTimestamps,
+        totalEnergy: p.totalEnergy,
+        totalScrap: p.totalScrap,
+        scrapEvents: p.scrapEvents || [],
+        completedAt: new Date().toLocaleTimeString()
+    };
+    completedProducts.unshift(product);
+    addCompletedRow(product);
+    addScrapRows(product);
+    updateOrderStats();
+    populateOrderSelect();
+
+    saveOrderToDb({
+        order_id: product.id,
+        product: product.product,
+        dimensions: product.dimensions,
+        material_name: product.materialName,
+        delivery_id: product.deliveryId || null,
+        delivery_batch: product.deliveryBatch || '',
+        manufacturer: product.manufacturer || '',
+        status: 'completed',
+        processing_time: parseFloat(product.processingTime) || 0,
+        total_energy: product.totalEnergy,
+        total_scrap: product.totalScrap,
+        quality: 'PASS',
+        stages_completed: product.stages.length,
+        stage_data: product.stages,
+        stage_timestamps: product.stageTimestamps,
+        scrap_events: product.scrapEvents || [],
+    });
+
+    consumePallet(product);
+}
+
+function addCompletedRow(product) {
+    var tbody = document.getElementById('completedBody');
+    var row = document.createElement('tr');
+    row.style.cursor = 'pointer';
+    row.onclick = function() { openProductModal(product.id); };
+    row.innerHTML =
+        '<td><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></td>' +
+        '<td class="cell-id">' + product.id + '</td>' +
+        '<td class="cell-name">' + product.product + '</td>' +
+        '<td>' + product.materialName + '</td>' +
+        '<td class="cell-mono">' + (product.deliveryBatch || '\u2014') + '</td>' +
+        '<td>' + product.dimensions + '</td>' +
+        '<td>' + product.processingTime + 's</td>' +
+        '<td><span class="status-badge completed">Pass</span></td>' +
+        '<td><span class="status-badge completed">Completed</span></td>';
+    tbody.insertBefore(row, tbody.firstChild);
+    document.getElementById('completedBadge').textContent = completedProducts.length;
+    autoCleanupTable();
+}
+
+function addScrapRows(product) {
+    var events = product.scrapEvents || [];
+    if (!events.length) return;
+    var tbody = document.getElementById('scrapBody');
+    var time = product.completedAt || new Date().toLocaleTimeString();
+    var avgRate = events.reduce(function(s, e) { return s + e.scrap_rate; }, 0) / events.length;
+    var detailId = 'scrap-detail-' + product.id.replace(/[^a-zA-Z0-9]/g, '');
+
+    var summaryRow = document.createElement('tr');
+    summaryRow.className = 'scrap-summary-row';
+    summaryRow.style.cursor = 'pointer';
+    summaryRow.innerHTML =
+        '<td><button class="expand-btn" onclick="toggleScrapDetail(this, \'' + detailId + '\'); event.stopPropagation();">&#9654;</button></td>' +
+        '<td class="cell-id">' + product.id + '</td>' +
+        '<td>' + (product.materialName || '') + '</td>' +
+        '<td class="cell-mono">' + (product.deliveryBatch || '\u2014') + '</td>' +
+        '<td>' + events.length + ' stages</td>' +
+        '<td>' + avgRate.toFixed(2) + '%</td>' +
+        '<td>' + time + '</td>';
+    summaryRow.onclick = function() { toggleScrapDetail(summaryRow.querySelector('.expand-btn'), detailId); };
+
+    var detailRow = document.createElement('tr');
+    detailRow.id = detailId;
+    detailRow.className = 'scrap-detail-row';
+    detailRow.style.display = 'none';
+    var detailHTML = '<td colspan="7"><div class="scrap-detail-container">' +
+        '<table class="scrap-sub-table"><thead><tr>' +
+        '<th>Machine Stage</th><th>Scrap Type</th><th>Scrap Rate</th>' +
+        '</tr></thead><tbody>';
+    events.forEach(function(se) {
+        detailHTML += '<tr><td>' + se.machine_name + '</td>' +
+            '<td>' + se.scrap_type + '</td>' +
+            '<td>' + se.scrap_rate.toFixed(2) + '%</td></tr>';
+    });
+    detailHTML += '</tbody></table></div></td>';
+    detailRow.innerHTML = detailHTML;
+
+    tbody.insertBefore(detailRow, tbody.firstChild);
+    tbody.insertBefore(summaryRow, tbody.firstChild);
+
+    events.forEach(function(se) { scrapLog.push(se); });
+    document.getElementById('scrapBadge').textContent = scrapLog.length;
+    if (infiniteMode) {
+        while (tbody.children.length > 60) {
+            tbody.removeChild(tbody.lastChild);
+            if (tbody.lastChild) tbody.removeChild(tbody.lastChild);
+        }
+        if (scrapLog.length > 30) scrapLog.length = 30;
+    }
+}
+
+function toggleScrapDetail(btn, detailId) {
+    var row = document.getElementById(detailId);
+    if (!row) return;
+    if (row.style.display === 'none') {
+        row.style.display = 'table-row';
+        btn.classList.add('expanded');
+    } else {
+        row.style.display = 'none';
+        btn.classList.remove('expanded');
+    }
+}
+
+function onProductDefect(p) {
+    var mi = p.currentMachine;
+    var types = DEFECT_TYPES[mi];
+    var causes = DEFECT_CAUSES[mi];
+    var defect = {
+        id: p.order.id,
+        product: p.order.product,
+        machine: MACHINE_SPECS[mi].name,
+        machineId: MACHINE_SPECS[mi].id,
+        machineIdx: mi,
+        type: types[Math.floor(Math.random() * types.length)],
+        cause: causes[Math.floor(Math.random() * causes.length)],
+        material: p.order.materialName,
+        materialId: p.order.materialId,
+        deliveryId: p.order.deliveryId,
+        deliveryBatch: p.order.deliveryBatch,
+        manufacturer: p.order.manufacturer,
+        dimensions: p.order.dimensions,
+        time: new Date().toLocaleTimeString(),
+        stagesCompleted: p.stageData.length,
+        stageData: p.stageData,
+        stageTimestamps: p.stageTimestamps,
+        scrapEvents: p.scrapEvents || [],
+        totalEnergy: p.totalEnergy,
+    };
+    defectLog.unshift(defect);
+    p.order.status = 'defected';
+
+    var tbody = document.getElementById('defectBody');
+    var row = document.createElement('tr');
+    row.style.cursor = 'pointer';
+    row.onclick = function() { openDefectModal(defect.id); };
+    row.innerHTML =
+        '<td class="cell-id">' + defect.id + '</td>' +
+        '<td>' + defect.product + '</td>' +
+        '<td class="cell-mono">' + defect.machine + '</td>' +
+        '<td><span class="status-badge" style="background:rgba(255,59,48,0.1);color:#ff3b30;">' + defect.type + '</span></td>' +
+        '<td>' + defect.cause + '</td>' +
+        '<td>' + defect.material + '</td>' +
+        '<td>' + defect.time + '</td>';
+    tbody.insertBefore(row, tbody.firstChild);
+
+    document.getElementById('defectSection').style.display = 'block';
+    document.getElementById('defectBadge').textContent = defectLog.length;
+    if (defect.scrapEvents && defect.scrapEvents.length > 0) {
+        addScrapRows({ id: defect.id, scrapEvents: defect.scrapEvents, materialName: defect.material, deliveryBatch: defect.deliveryBatch, completedAt: defect.time });
+    }
+    updateOrderStats();
+    populateOrderSelect();
+    autoCleanupTable();
+
+    saveOrderToDb({
+        order_id: defect.id,
+        product: defect.product,
+        dimensions: defect.dimensions || '',
+        material_name: defect.material || '',
+        delivery_id: defect.deliveryId || null,
+        delivery_batch: defect.deliveryBatch || '',
+        manufacturer: defect.manufacturer || '',
+        status: 'defected',
+        processing_time: 0,
+        total_energy: defect.totalEnergy || 0,
+        total_scrap: 0,
+        quality: 'FAIL',
+        defect_machine: defect.machine,
+        defect_machine_id: defect.machineId,
+        defect_type: defect.type,
+        defect_cause: defect.cause,
+        stages_completed: defect.stagesCompleted,
+        stage_data: defect.stageData || [],
+        stage_timestamps: defect.stageTimestamps || [],
+        scrap_events: defect.scrapEvents || [],
+    });
+
+    consumePallet(defect);
+}
+
+// =============================================
+// PRODUCT DETAIL MODAL
+// =============================================
+function buildTimelineHTML(stages, timestamps, stagesPassedLabel) {
+    return stages.map(function(s, i) {
+        var metricsHTML = Object.keys(s).filter(function(k) { return k !== 'energy' && k !== 'scrap' && k !== 'scrapType'; })
+            .map(function(k) { return '<span>' + k + ': ' + s[k] + '</span>'; }).join('');
+        if (s.scrap) {
+            metricsHTML += '<span class="scrap-metric">Scrap: ' + s.scrap + '% (' + (s.scrapType || '') + ')</span>';
+        }
+        var dotClass = stagesPassedLabel === 'fail' && i === stages.length - 1 ? 'fail' : 'pass';
+        return '<div class="timeline-stage">' +
+            '<div class="stage-dot ' + dotClass + '"></div>' +
+            '<div class="stage-info">' +
+                '<strong>' + MACHINE_SPECS[i].name + '</strong>' +
+                '<span class="stage-time">' + (timestamps[i] || '') + '</span>' +
+                '<div class="stage-metrics">' + metricsHTML + '</div>' +
+            '</div></div>';
+    }).join('');
+}
+
+function openProductModal(productId) {
+    var product = completedProducts.find(function(p) { return p.id === productId; });
+    if (!product) return;
+    document.getElementById('productModalTitle').textContent = product.id + ' \u2014 ' + product.product;
+
+    var timelineHTML = buildTimelineHTML(product.stages, product.stageTimestamps, 'pass');
+
+    var html =
+        '<div class="modal-profile-grid">' +
+            '<div class="machine-profile-item"><span class="profile-label">Product</span><span class="profile-value">' + product.product + '</span></div>' +
+            '<div class="machine-profile-item"><span class="profile-label">Dimensions</span><span class="profile-value">' + product.dimensions + '</span></div>' +
+            '<div class="machine-profile-item"><span class="profile-label">Material</span><span class="profile-value">' + product.materialName + '</span></div>' +
+            '<div class="machine-profile-item"><span class="profile-label">Vendor</span><span class="profile-value">' + product.manufacturer + '</span></div>' +
+            '<div class="machine-profile-item"><span class="profile-label">Processing Time</span><span class="profile-value">' + product.processingTime + 's</span></div>' +
+            '<div class="machine-profile-item"><span class="profile-label">Completed At</span><span class="profile-value">' + product.completedAt + '</span></div>' +
+        '</div>' +
+        '<h4>Manufacturing Pipeline</h4>' +
+        '<div class="product-history"><div class="history-timeline">' + timelineHTML + '</div></div>' +
+        '<h4>Traceability Links</h4>' +
+        '<div class="history-links">' +
+            '<span class="link-badge">Material: ' + product.materialName + '</span>' +
+            (product.deliveryBatch ? '<span class="link-badge">Delivery: ' + product.deliveryBatch + '</span>' : '') +
+            '<span class="link-badge">Vendor: ' + product.manufacturer + '</span>' +
+        '</div>' +
+        '<div class="history-totals">' +
+            '<span>Total Energy: <strong>' + product.totalEnergy.toFixed(1) + ' kWh</strong></span>' +
+            '<span>Scrap Rate: <strong>' + product.totalScrap.toFixed(2) + '%</strong></span>' +
+            '<span>Stages Passed: <strong>' + product.stages.length + '/' + MACHINE_SPECS.length + '</strong></span>' +
+            '<span>Quality: <strong class="quality-pass">PASS</strong></span>' +
+        '</div>';
+
+    var scraps = product.scrapEvents || [];
+    if (scraps.length > 0) {
+        html += '<h4>Scrap Events</h4>' +
+            '<table class="data-table" style="margin:0;"><thead><tr>' +
+            '<th>Machine</th><th>Scrap Type</th><th>Scrap Rate</th>' +
+            '</tr></thead><tbody>';
+        scraps.forEach(function(s) {
+            html += '<tr><td>' + (s.machine_name || '') + '</td>' +
+                '<td>' + (s.scrap_type || '') + '</td>' +
+                '<td>' + (s.scrap_rate || 0).toFixed(2) + '%</td></tr>';
+        });
+        html += '</tbody></table>';
+    }
+
+    document.getElementById('productModalBody').innerHTML = html;
+    document.getElementById('productModalOverlay').classList.add('active');
+}
+
+function openDefectModal(defectId) {
+    var defect = defectLog.find(function(d) { return d.id === defectId; });
+    if (!defect) return;
+    document.getElementById('productModalTitle').textContent = defect.id + ' \u2014 Defect Report';
+
+    var timelineHTML = '';
+    if (defect.stageData && defect.stageData.length > 0) {
+        timelineHTML = buildTimelineHTML(defect.stageData, defect.stageTimestamps || [], 'fail');
+    }
+
+    var html =
+        '<div class="modal-profile-grid">' +
+            '<div class="machine-profile-item"><span class="profile-label">Product</span><span class="profile-value">' + defect.product + '</span></div>' +
+            '<div class="machine-profile-item"><span class="profile-label">Dimensions</span><span class="profile-value">' + (defect.dimensions || '\u2014') + '</span></div>' +
+            '<div class="machine-profile-item"><span class="profile-label">Material</span><span class="profile-value">' + defect.material + '</span></div>' +
+            '<div class="machine-profile-item"><span class="profile-label">Vendor</span><span class="profile-value">' + (defect.manufacturer || '\u2014') + '</span></div>' +
+        '</div>' +
+        '<div class="failure-card">' +
+            '<div class="failure-card-title">Failure Analysis</div>' +
+            '<div class="failure-grid">' +
+                '<div><span class="fg-label">Failed At Machine</span><br><strong>' + defect.machine + '</strong> (' + defect.machineId + ')</div>' +
+                '<div><span class="fg-label">Defect Type</span><br><strong>' + defect.type + '</strong></div>' +
+                '<div><span class="fg-label">Root Cause</span><br><strong>' + defect.cause + '</strong></div>' +
+                '<div><span class="fg-label">Stages Before Failure</span><br><strong>' + defect.stagesCompleted + '/' + MACHINE_SPECS.length + '</strong></div>' +
+            '</div>' +
+        '</div>' +
+        (timelineHTML ?
+            '<h4>Pipeline Progress Before Failure</h4>' +
+            '<div class="product-history"><div class="history-timeline">' + timelineHTML + '</div></div>' : '') +
+        '<h4>Traceability Links</h4>' +
+        '<div class="history-links">' +
+            '<span class="link-badge">Material: ' + defect.material + '</span>' +
+            (defect.deliveryBatch ? '<span class="link-badge">Delivery: ' + defect.deliveryBatch + '</span>' : '') +
+            '<span class="link-badge">Vendor: ' + (defect.manufacturer || '\u2014') + '</span>' +
+        '</div>' +
+        '<div class="history-totals">' +
+            '<span>Energy Before Failure: <strong>' + (defect.totalEnergy || 0).toFixed(1) + ' kWh</strong></span>' +
+            '<span>Time of Failure: <strong>' + defect.time + '</strong></span>' +
+            '<span>Quality: <strong class="quality-fail">FAIL</strong></span>' +
+        '</div>';
+
+    var scraps = defect.scrapEvents || [];
+    if (scraps.length > 0) {
+        html += '<h4>Scrap Events</h4>' +
+            '<table class="data-table" style="margin:0;"><thead><tr>' +
+            '<th>Machine</th><th>Scrap Type</th><th>Scrap Rate</th>' +
+            '</tr></thead><tbody>';
+        scraps.forEach(function(s) {
+            html += '<tr><td>' + (s.machine_name || '') + '</td>' +
+                '<td>' + (s.scrap_type || '') + '</td>' +
+                '<td>' + (s.scrap_rate || 0).toFixed(2) + '%</td></tr>';
+        });
+        html += '</tbody></table>';
+    }
+
+    document.getElementById('productModalBody').innerHTML = html;
+    document.getElementById('productModalOverlay').classList.add('active');
+}
+
+function closeProductModal() {
+    document.getElementById('productModalOverlay').classList.remove('active');
+}
+
+// =============================================
+// SPEED PRESETS & INFINITE LOOP
+// =============================================
+var currentSpeed = 2;
+var infiniteMode = false;
+var infiniteInterval = null;
+
+function setSpeed(val) {
+    currentSpeed = val;
+    document.getElementById('speedValue').textContent = val + 'x';
+    document.querySelectorAll('.btn-speed-preset').forEach(function(b) {
+        b.classList.toggle('active', parseFloat(b.textContent) === val);
+    });
+}
+
+function onInfiniteToggle() {
+    infiniteMode = document.getElementById('infiniteToggle').checked;
+    if (infiniteMode) {
+        startInfiniteLoop();
+    } else {
+        stopInfiniteLoop();
+    }
+}
+
+function startInfiniteLoop() {
+    if (activeProducts.length === 0) autoStartNextOrder();
+    infiniteInterval = setInterval(function() {
+        if (!infiniteMode || paused) return;
+        if (activeProducts.length < 3) {
+            autoStartNextOrder();
+        }
+    }, 800);
+}
+
+function stopInfiniteLoop() {
+    if (infiniteInterval) { clearInterval(infiniteInterval); infiniteInterval = null; }
+}
+
+function autoStartNextOrder() {
+    var queued = orders.find(function(o) { return o.status === 'queued'; });
+    if (!queued) {
+        var available = deliveries.filter(function(d) { return (d.qty_int || 0) > 0; });
+        if (available.length === 0) {
+            if (infiniteMode) { infiniteMode = false; document.getElementById('infiniteToggle').checked = false; stopInfiniteLoop(); }
+            return;
+        }
+        generateOrders();
+        populateOrderSelect();
+        queued = orders.find(function(o) { return o.status === 'queued'; });
+    }
+    if (!queued) return;
+    queued.status = 'processing';
+
+    var mesh = createProductMesh();
+    mesh.position.set(PIPELINE_START_X, 0.55, 0);
+    pipelineScene.add(mesh);
+
+    activeProducts.push({
+        mesh: mesh,
+        order: queued,
+        state: ProductState.MOVING,
+        currentMachine: -1,
+        targetMachine: 0,
+        progress: 0,
+        processTimer: 0,
+        startTime: Date.now(),
+        stageData: [],
+        stageTimestamps: [],
+        totalEnergy: 0,
+        totalScrap: 0,
+        rejectZ: 0,
+    });
+    populateOrderSelect();
+    updateOrderStats();
+}
+
+function autoCleanupTable() {
+    if (!infiniteMode) return;
+    var MAX_ROWS = 10;
+    var cBody = document.getElementById('completedBody');
+    while (cBody.children.length > MAX_ROWS) {
+        cBody.removeChild(cBody.lastChild);
+    }
+    if (completedProducts.length > MAX_ROWS) {
+        completedProducts.length = MAX_ROWS;
+    }
+    var dBody = document.getElementById('defectBody');
+    while (dBody.children.length > MAX_ROWS) {
+        dBody.removeChild(dBody.lastChild);
+    }
+    if (defectLog.length > MAX_ROWS) {
+        defectLog.length = MAX_ROWS;
+    }
+}
+
+// =============================================
+// MACHINE HISTORY MODAL
+// =============================================
+function openMachineHistory(i) {
+    var spec = MACHINE_SPECS[i];
+    document.getElementById('machineModalTitle').textContent = spec.name + ' \u2014 Machine Profile';
+
+    var purchaseYear = parseInt(spec.purchaseDate.split('-')[0]);
+    var yearsUsed = 2026 - purchaseYear;
+    var depPercent = Math.min(100, Math.round(yearsUsed / spec.depreciationYears * 100));
+    var wearClass = spec.wearLevel < 30 ? 'low' : spec.wearLevel < 60 ? 'mid' : 'high';
+
+    var profileHTML =
+        '<div class="machine-profile">' +
+            '<div class="machine-profile-item"><span class="profile-label">Machine ID</span><span class="profile-value">' + spec.id + '</span></div>' +
+            '<div class="machine-profile-item"><span class="profile-label">Purchase Date</span><span class="profile-value">' + spec.purchaseDate + '</span></div>' +
+            '<div class="machine-profile-item"><span class="profile-label">Depreciation (' + depPercent + '%)</span>' +
+                '<div class="wear-bar"><div class="wear-fill ' + (depPercent < 50 ? 'low' : depPercent < 80 ? 'mid' : 'high') + '" style="width:' + depPercent + '%"></div></div></div>' +
+            '<div class="machine-profile-item"><span class="profile-label">Wear Level (' + spec.wearLevel + '%)</span>' +
+                '<div class="wear-bar"><div class="wear-fill ' + wearClass + '" style="width:' + spec.wearLevel + '%"></div></div></div>' +
+            '<div class="machine-profile-item"><span class="profile-label">Total Runtime</span><span class="profile-value">' + spec.totalHours.toLocaleString() + ' hours</span></div>' +
+            '<div class="machine-profile-item"><span class="profile-label">Products Processed</span><span class="profile-value">' + machineProductCounts[i] + ' (this session)</span></div>' +
+        '</div>';
+
+    var partsHTML = '<div class="maintenance-section"><h4>Parts Changed / Replaced</h4><ul style="font-size:0.72rem;color:var(--text-secondary);padding-left:18px;margin:0;">';
+    spec.partsChanged.forEach(function(part) { partsHTML += '<li>' + part + '</li>'; });
+    partsHTML += '</ul></div>';
+
+    var logHTML = '<div class="maintenance-section"><h4>Maintenance History</h4>' +
+        '<table class="maintenance-table"><thead><tr><th>Date</th><th>Type</th><th>Description</th><th>Cost</th></tr></thead><tbody>';
+    spec.maintenanceLog.forEach(function(entry) {
+        var cls = entry.type === 'Preventive' ? 'preventive' : 'corrective';
+        logHTML += '<tr><td>' + entry.date + '</td><td><span class="maintenance-type ' + cls + '">' + entry.type + '</span></td><td>' + entry.desc + '</td><td>\u20b9' + entry.cost.toLocaleString() + '</td></tr>';
+    });
+    logHTML += '</tbody></table></div>';
+
+    document.getElementById('machineModalBody').innerHTML = profileHTML + partsHTML + logHTML;
+    document.getElementById('machineModalOverlay').classList.add('active');
+}
+
+function closeMachineHistory() {
+    document.getElementById('machineModalOverlay').classList.remove('active');
+}
+
+// Close modals on overlay click
+document.addEventListener('click', function(e) {
+    if (e.target.id === 'machineModalOverlay') closeMachineHistory();
+    if (e.target.id === 'productModalOverlay') closeProductModal();
+});
+
+// =============================================
+// INIT
+// =============================================
+document.addEventListener('DOMContentLoaded', function() {
+    generateOrders();
+    populateOrderSelect();
+    buildMachineCards();
+    initPipelineScene();
+    setSpeed(2);
+
+    fetchInitialMachineHealth();
+    setInterval(fetchInitialMachineHealth, 5000);
+
+    loadSavedOrders();
+
+    setInterval(updateMachineStats, 500);
+});
+
+function loadSavedOrders() {
+    var saved = [];
+    try { saved = JSON.parse('{{ saved_orders_json|escapejs }}'); } catch(e) {}
+    if (!saved || !saved.length) return;
+
+    saved.forEach(function(o) {
+        if (o.status === 'completed') {
+            var product = {
+                id: o.order_id,
+                product: o.product,
+                materialName: o.material_name || '',
+                deliveryBatch: o.delivery_batch || '',
+                manufacturer: o.manufacturer || '',
+                dimensions: o.dimensions || '',
+                processingTime: (o.processing_time || 0).toFixed(1),
+                stages: o.stage_data || [],
+                stageTimestamps: o.stage_timestamps || [],
+                totalEnergy: o.total_energy || 0,
+                totalScrap: o.total_scrap || 0,
+                completedAt: o.created_at || ''
+            };
+            completedProducts.push(product);
+            addCompletedRow(product);
+        } else if (o.status === 'defected') {
+            var defect = {
+                id: o.order_id,
+                product: o.product,
+                machine: o.defect_machine || '',
+                machineId: o.defect_machine_id || '',
+                type: o.defect_type || '',
+                cause: o.defect_cause || '',
+                material: o.material_name || '',
+                manufacturer: o.manufacturer || '',
+                dimensions: o.dimensions || '',
+                deliveryBatch: o.delivery_batch || '',
+                time: o.created_at || '',
+                stagesCompleted: o.stages_completed || 0,
+                stageData: o.stage_data || [],
+                stageTimestamps: o.stage_timestamps || [],
+                totalEnergy: o.total_energy || 0,
+            };
+            defectLog.push(defect);
+            var tbody = document.getElementById('defectBody');
+            var row = document.createElement('tr');
+            row.style.cursor = 'pointer';
+            row.onclick = (function(did) { return function() { openDefectModal(did); }; })(defect.id);
+            row.innerHTML =
+                '<td class="cell-id">' + defect.id + '</td>' +
+                '<td>' + defect.product + '</td>' +
+                '<td class="cell-mono">' + defect.machine + '</td>' +
+                '<td><span class="status-badge" style="background:rgba(255,59,48,0.1);color:#ff3b30;">' + defect.type + '</span></td>' +
+                '<td>' + defect.cause + '</td>' +
+                '<td>' + defect.material + '</td>' +
+                '<td>' + defect.time + '</td>';
+            tbody.appendChild(row);
+        }
+    });
+
+    if (defectLog.length > 0) {
+        document.getElementById('defectSection').style.display = 'block';
+    }
+    updateOrderStats();
+
+    var savedScraps = [];
+    try { savedScraps = JSON.parse('{{ saved_scraps_json|escapejs }}'); } catch(e) {}
+    if (savedScraps && savedScraps.length) {
+        var grouped = {};
+        savedScraps.forEach(function(s) {
+            var oid = s.order_id || 'unknown';
+            if (!grouped[oid]) grouped[oid] = { events: [], material: s.material_name || '', batch: s.delivery_batch || '', time: s.created_at || '' };
+            grouped[oid].events.push(s);
+        });
+        Object.keys(grouped).forEach(function(oid) {
+            var g = grouped[oid];
+            var scrapArr = g.events.map(function(s) {
+                return { machine_name: s.machine_name || '', scrap_type: s.scrap_type || '', scrap_rate: s.scrap_rate || 0 };
+            });
+            addScrapRows({
+                id: oid,
+                materialName: g.material,
+                deliveryBatch: g.batch,
+                completedAt: g.time,
+                scrapEvents: scrapArr
+            });
+            var cp = completedProducts.find(function(p) { return p.id === oid; });
+            if (cp) cp.scrapEvents = scrapArr;
+            var df = defectLog.find(function(d) { return d.id === oid; });
+            if (df) df.scrapEvents = scrapArr;
+        });
+    }
+}
+
+// =============================================
+// AI PIPELINE CONTROL — Listen for ui_command events from AI chat
+// =============================================
+document.addEventListener('pipeline_command', function(e) {
+    var cmd = e.detail;
+    if (!cmd || !cmd.command) return;
+
+    switch (cmd.command) {
+        case 'start_production':
+            // Start a specific order or the next queued one
+            if (cmd.order_id) {
+                var sel = document.getElementById('orderSelect');
+                // Try to select the matching order
+                for (var i = 0; i < sel.options.length; i++) {
+                    if (sel.options[i].value === cmd.order_id) {
+                        sel.value = cmd.order_id;
+                        onOrderSelect();
+                        break;
+                    }
+                }
+            }
+            // Find any queued order and start it
+            var queued = orders.find(function(o) { return o.status === 'queued'; });
+            if (!queued) {
+                generateOrders();
+                populateOrderSelect();
+                queued = orders.find(function(o) { return o.status === 'queued'; });
+            }
+            if (queued) {
+                var sel2 = document.getElementById('orderSelect');
+                sel2.value = queued.id;
+                onOrderSelect();
+                startProduction();
+            }
+            break;
+
+        case 'start_all':
+            // Enable infinite mode to run all orders
+            if (!infiniteMode) {
+                infiniteMode = true;
+                document.getElementById('infiniteToggle').checked = true;
+                startInfiniteLoop();
+            }
+            break;
+
+        case 'set_speed':
+            var spd = parseFloat(cmd.value) || 2;
+            setSpeed(spd);
+            break;
+
+        case 'set_defect_rate':
+            var rate = parseInt(cmd.value) || 15;
+            rate = Math.max(5, Math.min(100, rate));
+            var slider = document.getElementById('defectRateSlider');
+            slider.value = rate;
+            document.getElementById('defectRateValue').textContent = rate + '%';
+            break;
+
+        case 'toggle_errors':
+            var errorToggle = document.getElementById('errorToggle');
+            errorToggle.checked = !!cmd.value;
+            onErrorToggle();
+            break;
+
+        case 'toggle_infinite':
+            var infToggle = document.getElementById('infiniteToggle');
+            var shouldEnable = !!cmd.value;
+            if (shouldEnable !== infiniteMode) {
+                infToggle.checked = shouldEnable;
+                onInfiniteToggle();
+            }
+            break;
+
+        case 'pause_resume':
+            if (cmd.value === 'pause' && !paused) {
+                togglePause();
+            } else if (cmd.value === 'resume' && paused) {
+                togglePause();
+            } else if (cmd.value === 'toggle') {
+                togglePause();
+            }
+            break;
+
+        case 'get_status':
+            // No-op on the frontend — the tool returns DB data to the AI
+            break;
+    }
+});
+</script>
+{% endblock %}

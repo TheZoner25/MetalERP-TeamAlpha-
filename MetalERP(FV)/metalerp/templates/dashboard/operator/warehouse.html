@@ -1,0 +1,50 @@
+{% extends "base_operator.html" %}
+{% load static %}
+
+{% block title %}Stremet — Warehouse Management{% endblock %}
+
+{% block ui_content %}
+<div class="op-page-content">
+    <div class="op-page-header">
+        <h1 class="op-page-title">Warehouse Management</h1>
+    </div>
+
+    <div class="op-warehouse-grid">
+        {% for wh in warehouses %}
+        <div class="op-warehouse-card">
+            <div class="op-warehouse-card-header">
+                <div class="op-warehouse-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                </div>
+                <div>
+                    <h3 class="op-warehouse-name">{{ wh.name }}</h3>
+                    <span class="op-warehouse-code">{{ wh.code }}</span>
+                </div>
+            </div>
+            <div class="op-warehouse-card-body">
+                <div class="op-warehouse-detail">
+                    <span class="op-warehouse-detail-label">Dimensions</span>
+                    <span class="op-warehouse-detail-value">{{ wh.width_m }}m x {{ wh.length_m }}m x {{ wh.height_m }}m</span>
+                </div>
+                <div class="op-warehouse-detail">
+                    <span class="op-warehouse-detail-label">Status</span>
+                    <span class="op-warehouse-detail-value">
+                        {% if wh.layout_configured %}
+                        <span class="op-status-badge op-status-stored">Configured</span>
+                        {% else %}
+                        <span class="op-status-badge op-status-pending">Default Layout</span>
+                        {% endif %}
+                    </span>
+                </div>
+            </div>
+            <a href="{% url 'dashboard:operator_warehouse_view' wh.id %}" class="op-warehouse-configure">
+                View Layout
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+            </a>
+        </div>
+        {% empty %}
+        <p class="op-td-empty">No warehouses configured</p>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

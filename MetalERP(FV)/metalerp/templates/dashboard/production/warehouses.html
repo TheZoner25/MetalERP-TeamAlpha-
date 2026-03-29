@@ -1,0 +1,61 @@
+{% extends "base_production.html" %}
+{% load static %}
+
+{% block title %}Stremet — Warehouses{% endblock %}
+
+{% block ui_content %}
+<div class="op-page-content">
+    <div class="op-page-header">
+        <h1 class="op-page-title">Warehouses</h1>
+    </div>
+
+    <div class="ps-warehouses-grid">
+        {% for wh in warehouses %}
+        <div class="ps-warehouse-card">
+            <div class="ps-wh-header">
+                <div>
+                    <h3 class="ps-wh-name">{{ wh.name }}</h3>
+                    <span class="ps-wh-code">{{ wh.code }}</span>
+                </div>
+                <div class="ps-wh-dims">{{ wh.width_m }}m &times; {{ wh.length_m }}m &times; {{ wh.height_m }}m</div>
+            </div>
+
+            <div class="ps-wh-util-row">
+                <span class="ps-wh-util-label">Utilization</span>
+                <span class="ps-wh-util-val">{{ wh.utilization }}%</span>
+            </div>
+            <div class="ps-util-bar-track">
+                <div class="ps-util-bar-fill {% if wh.utilization > 90 %}ps-util-red{% elif wh.utilization > 70 %}ps-util-orange{% else %}ps-util-green{% endif %}" style="width: {{ wh.utilization }}%;"></div>
+            </div>
+
+            <div class="ps-wh-stats">
+                <div class="ps-wh-stat">
+                    <span class="ps-wh-stat-val">{{ wh.pending }}</span>
+                    <span class="ps-wh-stat-label">Pending</span>
+                </div>
+                <div class="ps-wh-stat">
+                    <span class="ps-wh-stat-val">{{ wh.stored }}</span>
+                    <span class="ps-wh-stat-label">Stored</span>
+                </div>
+                <div class="ps-wh-stat">
+                    <span class="ps-wh-stat-val">{{ wh.num_docks }}</span>
+                    <span class="ps-wh-stat-label">Docks</span>
+                </div>
+            </div>
+
+            <div class="ps-wh-actions">
+                <a href="{% url 'dashboard:production_warehouse_editor' wh.id %}" class="ps-btn ps-btn-outline">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    Edit Layout
+                </a>
+                {% if not wh.layout_configured %}
+                <span class="ps-wh-badge-setup">Layout not configured</span>
+                {% endif %}
+            </div>
+        </div>
+        {% empty %}
+        <div class="op-td-empty">No warehouses configured</div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
